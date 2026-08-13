@@ -1,0 +1,10 @@
+{
+  "description": "Platform AI Thành Danh offers AI-powered tools designed to enhance productivity and streamline workflows for businesses and professionals.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
