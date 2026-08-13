@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import logoThanhDanh from './imports/logo thanhdanh.png'
 
 // ─── Icons (inline SVG) ─────────────────────────────────────────────────────
 
@@ -158,15 +159,11 @@ function Sidebar({ page, setPage, setShowPromptLib, onAdmin }: {
   ] as const
 
   return (
-    <aside className="w-52 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col h-full">
+    <aside className="w-50 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col h-full">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 py-4 border-b border-gray-100">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-700 to-stone-600 flex items-center justify-center shadow-sm">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
-        </div>
-        <span className="font-bold text-gray-900 text-[15px] tracking-tight">Thành Danh AI</span>
+        <img src={logoThanhDanh} alt="Logo" className="w-25 h-25 rounded-lg" />
+        <span className="font-bold text-gray-900 text-[15px] tracking-tight ">DANAI</span>
       </div>
 
       {/* Search */}
@@ -517,7 +514,7 @@ function IconModelDeepSeek() {
   )
 }
 
-const modelIconMap: Record<string, JSX.Element> = {
+const modelIconMap: Record<string, ReactNode> = {
   auto: <IconModelAuto />,
   misa: <IconModelMisa />,
   gpt: <IconModelGPT />,
@@ -1959,23 +1956,550 @@ function AdminDinhMuc() {
   )
 }
 
+// ─── Admin: Phân quyền tính năng ────────────────────────────────────────────
+
+function AdminPhanQuyen() {
+  const roles = [
+    { id: 'system', name: 'Quản trị hệ thống', count: 1, description: 'Toàn quyền truy cập và quản trị' },
+    { id: 'unit', name: 'Quản trị đơn vị', count: 3, description: 'Quản lý người dùng và định mức trong đơn vị' },
+    { id: 'manager', name: 'Quản lý bộ phận', count: 9, description: 'Truy cập theo nhóm và báo cáo nội bộ' },
+    { id: 'user', name: 'Người dùng', count: 52, description: 'Dùng tính năng theo hạn mức được cấp' },
+  ] as const
+
+  const featureGroups = [
+    {
+      group: 'AI Studio',
+      features: [
+        { id: 'studio-chart', name: 'Tạo biểu đồ', icon: '📊', description: 'Tạo báo cáo, sơ đồ và trực quan hóa dữ liệu' },
+        { id: 'studio-infographic', name: 'Infographic', icon: '🎨', description: 'Thiết kế infographic và poster' },
+        { id: 'studio-slide', name: 'Slide', icon: '🧾', description: 'Tạo slide, trình bày nội dung' },
+      ],
+    },
+    {
+      group: 'Tài liệu & làm việc',
+      features: [
+        { id: 'workspace', name: 'Workspace', icon: '📁', description: 'Quản lý dự án, thư mục và tài liệu' },
+        { id: 'notebook', name: 'Notebook', icon: '📝', description: 'Ghi chú, tóm tắt và phân tích' },
+        { id: 'meeting', name: 'Ghi chép cuộc họp', icon: '🎙️', description: 'Thu âm, tóm tắt và lưu trữ cuộc họp' },
+      ],
+    },
+    {
+      group: 'Quản trị',
+      features: [
+        { id: 'report', name: 'Báo cáo', icon: '📈', description: 'Xem báo cáo tổng hợp và thống kê' },
+        { id: 'quota', name: 'Thiết lập định mức', icon: '⚙️', description: 'Cấu hình giới hạn credit và định mức' },
+        { id: 'users', name: 'Quản lý người dùng', icon: '👥', description: 'Thêm, chỉnh sửa và vô hiệu hóa tài khoản' },
+      ],
+    },
+  ] as const
+
+  type PermissionAction = 'view' | 'edit' | 'export'
+  type RolePermissionMap = Record<string, Record<string, Record<PermissionAction, boolean>>>
+
+  const [selectedRole, setSelectedRole] = useState<string>(roles[0].name)
+  const [search, setSearch] = useState('')
+  const [rolePermissions, setRolePermissions] = useState<RolePermissionMap>({
+    'Quản trị hệ thống': {
+      'studio-chart': { view: true, edit: true, export: true },
+      'studio-infographic': { view: true, edit: true, export: true },
+      'studio-slide': { view: true, edit: true, export: true },
+      workspace: { view: true, edit: true, export: true },
+      notebook: { view: true, edit: true, export: true },
+      meeting: { view: true, edit: true, export: true },
+      report: { view: true, edit: true, export: true },
+      quota: { view: true, edit: true, export: true },
+      users: { view: true, edit: true, export: true },
+    },
+    'Quản trị đơn vị': {
+      'studio-chart': { view: true, edit: true, export: true },
+      'studio-infographic': { view: true, edit: false, export: true },
+      'studio-slide': { view: true, edit: true, export: true },
+      workspace: { view: true, edit: true, export: false },
+      notebook: { view: true, edit: true, export: true },
+      meeting: { view: true, edit: true, export: false },
+      report: { view: true, edit: false, export: true },
+      quota: { view: true, edit: false, export: false },
+      users: { view: true, edit: true, export: false },
+    },
+    'Quản lý bộ phận': {
+      'studio-chart': { view: true, edit: false, export: true },
+      'studio-infographic': { view: true, edit: false, export: false },
+      'studio-slide': { view: true, edit: false, export: false },
+      workspace: { view: true, edit: false, export: false },
+      notebook: { view: true, edit: true, export: false },
+      meeting: { view: true, edit: true, export: false },
+      report: { view: true, edit: false, export: true },
+      quota: { view: false, edit: false, export: false },
+      users: { view: false, edit: false, export: false },
+    },
+    'Người dùng': {
+      'studio-chart': { view: true, edit: false, export: false },
+      'studio-infographic': { view: true, edit: false, export: false },
+      'studio-slide': { view: true, edit: false, export: false },
+      workspace: { view: true, edit: true, export: false },
+      notebook: { view: true, edit: true, export: false },
+      meeting: { view: true, edit: false, export: false },
+      report: { view: false, edit: false, export: false },
+      quota: { view: false, edit: false, export: false },
+      users: { view: false, edit: false, export: false },
+    },
+  })
+
+  const togglePermission = (featureId: string, action: PermissionAction) => {
+    const currentRoleData = rolePermissions[selectedRole] ?? {}
+    const currentFeature = currentRoleData[featureId] ?? { view: false, edit: false, export: false }
+
+    setRolePermissions((prev) => ({
+      ...prev,
+      [selectedRole]: {
+        ...prev[selectedRole],
+        [featureId]: {
+          ...currentFeature,
+          [action]: !currentFeature[action],
+        },
+      },
+    }))
+  }
+
+  const filteredGroups = featureGroups
+    .map((group) => ({
+      ...group,
+      features: group.features.filter((item) =>
+        item.name.toLowerCase().includes(search.toLowerCase()) ||
+        group.group.toLowerCase().includes(search.toLowerCase()),
+      ),
+    }))
+    .filter((group) => group.features.length > 0)
+
+  const activePermissions = rolePermissions[selectedRole] ?? {}
+  const permissionSummary = {
+    view: Object.values(activePermissions).filter((item) => item.view).length,
+    edit: Object.values(activePermissions).filter((item) => item.edit).length,
+    export: Object.values(activePermissions).filter((item) => item.export).length,
+  }
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Phân quyền tính năng</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Quản lý quyền truy cập theo vai trò và nhóm người dùng</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="px-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+            Sao chép quyền
+          </button>
+          <button className="px-4 py-2 text-sm bg-stone-700 hover:bg-stone-800 rounded-lg text-white transition-colors font-medium">
+            Lưu thay đổi
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[240px_minmax(0,1fr)] flex-1 min-h-0 overflow-hidden">
+        <aside className="border-r border-gray-100 bg-gray-50 p-3 overflow-y-auto">
+          <div className="mb-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-gray-400 font-semibold">Vai trò</p>
+          </div>
+          <div className="space-y-2">
+            {roles.map((role) => (
+              <button
+                key={role.id}
+                onClick={() => setSelectedRole(role.name)}
+                className={`w-full text-left rounded-xl border p-3 transition-all ${
+                  selectedRole === role.name
+                    ? 'bg-white border-stone-200 shadow-sm'
+                    : 'bg-transparent border-transparent hover:bg-white/80'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-sm font-semibold text-gray-800">{role.name}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-700 font-medium">
+                    {role.count}
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-relaxed">{role.description}</p>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="grid grid-cols-3 gap-4 mb-5">
+            <div className="bg-white border border-gray-100 rounded-2xl p-4">
+              <p className="text-xs text-gray-500 mb-1">Tổng quyền xem</p>
+              <div className="flex items-end justify-between">
+                <span className="text-2xl font-bold text-gray-900">{permissionSummary.view}</span>
+                <span className="text-[11px] text-green-600 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">Đang bật</span>
+              </div>
+            </div>
+            <div className="bg-white border border-gray-100 rounded-2xl p-4">
+              <p className="text-xs text-gray-500 mb-1">Tổng quyền chỉnh sửa</p>
+              <div className="flex items-end justify-between">
+                <span className="text-2xl font-bold text-gray-900">{permissionSummary.edit}</span>
+                <span className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">Cần kiểm duyệt</span>
+              </div>
+            </div>
+            <div className="bg-white border border-gray-100 rounded-2xl p-4">
+              <p className="text-xs text-gray-500 mb-1">Tổng quyền xuất</p>
+              <div className="flex items-end justify-between">
+                <span className="text-2xl font-bold text-gray-900">{permissionSummary.export}</span>
+                <span className="text-[11px] text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">Bảo mật</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <div>
+                <h3 className="text-base font-bold text-gray-900">{selectedRole}</h3>
+                <p className="text-[11px] text-gray-500">Thiết lập quyền truy cập tính năng</p>
+              </div>
+              <div className="relative w-64">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><IconSearch /></span>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Tìm tính năng"
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-stone-300"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 space-y-5">
+              {filteredGroups.map((group) => (
+                <div key={group.group} className="border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between bg-stone-50 px-4 py-2.5 border-b border-gray-100">
+                    <p className="text-sm font-semibold text-stone-800">{group.group}</p>
+                    <span className="text-[11px] text-gray-500">{group.features.length} tính năng</span>
+                  </div>
+
+                  <div className="divide-y divide-gray-100">
+                    {group.features.map((feature) => {
+                      const permissions = rolePermissions[selectedRole]?.[feature.id] ?? { view: false, edit: false, export: false }
+
+                      return (
+                        <div key={feature.id} className="grid grid-cols-[minmax(0,1.8fr)_repeat(3,minmax(0,0.7fr))] gap-3 px-4 py-3 items-center">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-stone-100 to-gray-100 flex items-center justify-center text-lg shadow-inner">
+                              {feature.icon}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-gray-800 truncate">{feature.name}</p>
+                              <p className="text-[11px] text-gray-500 leading-relaxed">{feature.description}</p>
+                            </div>
+                          </div>
+
+                          {(['view', 'edit', 'export'] as PermissionAction[]).map((action) => (
+                            <label
+                              key={action}
+                              className="flex items-center justify-center gap-2 text-xs text-gray-600 cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={permissions[action]}
+                                onChange={() => togglePermission(feature.id, action)}
+                                className="accent-stone-700 rounded"
+                              />
+                              <span className="capitalize">{action === 'view' ? 'Xem' : action === 'edit' ? 'Sửa' : 'Xuất'}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {filteredGroups.length === 0 && (
+                <div className="py-10 text-center text-sm text-gray-400">
+                  Không tìm thấy tính năng phù hợp với từ khóa tìm kiếm.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Admin: Quản lý người dùng ────────────────────────────────────────────────
 
-type UserRow = { name: string; email: string; role: string }
+type PermissionAction = 'view' | 'edit' | 'export'
+type FeaturePermission = Record<PermissionAction, boolean>
 
-function AddUserModal({ onClose }: { onClose: () => void }) {
-  const [rows, setRows] = useState<UserRow[]>([{ name: '', email: '', role: 'Người dùng' }])
-  const [showInfo, setShowInfo] = useState(true)
+type UserRow = { name: string; email: string; role: string; permissions: Record<string, FeaturePermission> }
+type StoredUser = UserRow & { id: string; department: string; status: 'Đang sử dụng' | 'Tạm khóa' }
 
-  const addRow = () => setRows(r => [...r, { name: '', email: '', role: 'Người dùng' }])
-  const updateRow = (i: number, field: keyof UserRow, val: string) =>
-    setRows(r => r.map((row, idx) => idx === i ? { ...row, [field]: val } : row))
-  const removeRow = (i: number) => setRows(r => r.filter((_, idx) => idx !== i))
+const STORAGE_KEY = 'thanhdanh-users'
+
+function getDefaultUserPermissions(role: string): Record<string, FeaturePermission> {
+  const base: Record<string, FeaturePermission> = {
+    'studio-chart': { view: true, edit: false, export: false },
+    'studio-infographic': { view: true, edit: false, export: false },
+    'studio-slide': { view: true, edit: false, export: false },
+    workspace: { view: true, edit: true, export: false },
+    notebook: { view: true, edit: true, export: false },
+    meeting: { view: true, edit: false, export: false },
+    report: { view: false, edit: false, export: false },
+    quota: { view: false, edit: false, export: false },
+    users: { view: false, edit: false, export: false },
+  }
+
+  if (role === 'Quản trị đơn vị') {
+    return {
+      'studio-chart': { view: true, edit: true, export: true },
+      'studio-infographic': { view: true, edit: true, export: true },
+      'studio-slide': { view: true, edit: true, export: true },
+      workspace: { view: true, edit: true, export: true },
+      notebook: { view: true, edit: true, export: true },
+      meeting: { view: true, edit: true, export: true },
+      report: { view: true, edit: true, export: true },
+      quota: { view: true, edit: false, export: false },
+      users: { view: true, edit: true, export: false },
+    }
+  }
+
+  if (role === 'Quản trị hệ thống') {
+    return {
+      'studio-chart': { view: true, edit: true, export: true },
+      'studio-infographic': { view: true, edit: true, export: true },
+      'studio-slide': { view: true, edit: true, export: true },
+      workspace: { view: true, edit: true, export: true },
+      notebook: { view: true, edit: true, export: true },
+      meeting: { view: true, edit: true, export: true },
+      report: { view: true, edit: true, export: true },
+      quota: { view: true, edit: true, export: true },
+      users: { view: true, edit: true, export: true },
+    }
+  }
+
+  return base
+}
+
+const defaultUsers: StoredUser[] = [
+  {
+    id: 'NV000001',
+    name: 'Trần Thanh Hiếu',
+    email: 'thanhhieu@thanhdanh.ai',
+    role: 'Quản trị hệ thống',
+    department: 'CÔNG TY LUẬT TNHH TÂM PHÚC AG',
+    status: 'Đang sử dụng',
+    permissions: getDefaultUserPermissions('Quản trị hệ thống'),
+  },
+]
+
+const userPermissionGroups = [
+  {
+    group: 'AI Studio',
+    features: [
+      { id: 'studio-chart', label: 'Tạo biểu đồ' },
+      { id: 'studio-infographic', label: 'Infographic' },
+      { id: 'studio-slide', label: 'Slide' },
+    ],
+  },
+  {
+    group: 'Làm việc',
+    features: [
+      { id: 'workspace', label: 'Workspace' },
+      { id: 'notebook', label: 'Notebook' },
+      { id: 'meeting', label: 'Ghi chép cuộc họp' },
+    ],
+  },
+  {
+    group: 'Quản trị',
+    features: [
+      { id: 'report', label: 'Báo cáo' },
+      { id: 'quota', label: 'Thiết lập định mức' },
+      { id: 'users', label: 'Quản lý người dùng' },
+    ],
+  },
+] as const
+
+function EditUserModal({ user, onClose, onSave }: { user: StoredUser; onClose: () => void; onSave: (user: StoredUser) => void }) {
+  const [form, setForm] = useState<StoredUser>({ ...user })
+
+  const updateForm = <K extends keyof StoredUser>(field: K, value: StoredUser[K]) => {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  const updatePermission = (featureId: string, action: PermissionAction, checked: boolean) => {
+    setForm(prev => ({
+      ...prev,
+      permissions: {
+        ...prev.permissions,
+        [featureId]: {
+          ...(prev.permissions[featureId] ?? { view: false, edit: false, export: false }),
+          [action]: checked,
+        },
+      },
+    }))
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-        {/* Header */}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh]">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-base font-bold text-gray-900">Chỉnh sửa người dùng</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Cập nhật thông tin cá nhân và quyền truy cập</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-0.5"><IconX /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Họ và tên</label>
+              <input
+                value={form.name}
+                onChange={e => updateForm('name', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-stone-400"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email</label>
+              <input
+                value={form.email}
+                onChange={e => updateForm('email', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-stone-400"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Vai trò</label>
+              <select
+                value={form.role}
+                onChange={e => {
+                  const nextRole = e.target.value
+                  updateForm('role', nextRole)
+                  setForm(prev => ({ ...prev, permissions: getDefaultUserPermissions(nextRole) }))
+                }}
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none bg-white"
+              >
+                <option>Người dùng</option>
+                <option>Quản trị hệ thống</option>
+                <option>Quản trị đơn vị</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Trạng thái</label>
+              <select
+                value={form.status}
+                onChange={e => updateForm('status', e.target.value as StoredUser['status'])}
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none bg-white"
+              >
+                <option>Đang sử dụng</option>
+                <option>Tạm khóa</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="border border-gray-100 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-stone-50 border-b border-gray-100">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Phân quyền trực tiếp</p>
+                <p className="text-[11px] text-gray-500">Điều chỉnh quyền cho người dùng</p>
+              </div>
+              <span className="text-xs px-2.5 py-1 bg-white border border-stone-200 rounded-full text-stone-700 font-medium">
+                {form.role}
+              </span>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {userPermissionGroups.map(group => (
+                <div key={group.group} className="rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600">{group.group}</div>
+                  <div className="divide-y divide-gray-100">
+                    {group.features.map(feature => {
+                      const permissions = form.permissions[feature.id] ?? { view: false, edit: false, export: false }
+                      return (
+                        <div key={feature.id} className="grid grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,0.7fr))] gap-3 px-3 py-3 items-center">
+                          <div className="text-sm font-medium text-gray-700">{feature.label}</div>
+                          {(['view', 'edit', 'export'] as PermissionAction[]).map(action => (
+                            <label key={`${feature.id}-${action}`} className="flex items-center justify-center gap-2 text-[11px] text-gray-600 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={permissions[action]}
+                                onChange={e => updatePermission(feature.id, action, e.target.checked)}
+                                className="accent-stone-700 rounded"
+                              />
+                              <span>{action === 'view' ? 'Xem' : action === 'edit' ? 'Sửa' : 'Xuất'}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
+          <span className="text-xs text-gray-400">Cập nhật quyền và thông tin người dùng</span>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-5 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Hủy</button>
+            <button
+              onClick={() => {
+                if (!form.name.trim() || !form.email.trim()) return
+                onSave(form)
+              }}
+              className="px-6 py-2 bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Lưu thay đổi
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: (users: UserRow[]) => void }) {
+  const [rows, setRows] = useState<UserRow[]>([{ name: '', email: '', role: 'Người dùng', permissions: getDefaultUserPermissions('Người dùng') }])
+  const [showInfo, setShowInfo] = useState(true)
+  const [selectedIndex, setSelectedIndex] = useState(0)
+
+  const addRow = () => {
+    setRows(r => [...r, { name: '', email: '', role: 'Người dùng', permissions: getDefaultUserPermissions('Người dùng') }])
+    setSelectedIndex(rows.length)
+  }
+
+  const updateRow = (i: number, field: keyof UserRow, val: string) =>
+    setRows(r => r.map((row, idx) => {
+      if (idx !== i) return row
+      if (field === 'role') {
+        return { ...row, role: val, permissions: getDefaultUserPermissions(val) }
+      }
+      return { ...row, [field]: val }
+    }))
+
+  const updatePermission = (i: number, featureId: string, action: PermissionAction, checked: boolean) => {
+    setRows(r => r.map((row, idx) => {
+      if (idx !== i) return row
+      const current = row.permissions[featureId] ?? { view: false, edit: false, export: false }
+      return {
+        ...row,
+        permissions: {
+          ...row.permissions,
+          [featureId]: { ...current, [action]: checked },
+        },
+      }
+    }))
+  }
+
+  const removeRow = (i: number) => {
+    const nextRows = rows.filter((_, idx) => idx !== i)
+    setRows(nextRows.length ? nextRows : [{ name: '', email: '', role: 'Người dùng', permissions: getDefaultUserPermissions('Người dùng') }])
+    setSelectedIndex(0)
+  }
+
+  const activeRow = rows[selectedIndex] ?? rows[0]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh]">
         <div className="flex items-start justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h3 className="text-base font-bold text-gray-900">Thêm người dùng</h3>
@@ -1984,7 +2508,6 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-0.5"><IconX /></button>
         </div>
 
-        {/* Table */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <table className="w-full text-sm">
             <thead>
@@ -2001,7 +2524,11 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {rows.map((row, i) => (
-                <tr key={i}>
+                <tr
+                  key={i}
+                  onClick={() => setSelectedIndex(i)}
+                  className={`cursor-pointer transition-colors ${selectedIndex === i ? 'bg-stone-50' : ''}`}
+                >
                   <td className="py-2 pr-3 text-xs text-gray-400">{i + 1}</td>
                   <td className="py-2 pr-3">
                     <input
@@ -2047,9 +2574,52 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
           >
             <IconPlus /> Thêm dòng
           </button>
+
+          <div className="mt-5 border border-gray-100 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-stone-50 border-b border-gray-100">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Phân quyền trực tiếp</p>
+                <p className="text-[11px] text-gray-500">Cấu hình quyền cho người dùng đang chọn</p>
+              </div>
+              <span className="text-xs px-2.5 py-1 bg-white border border-stone-200 rounded-full text-stone-700 font-medium">
+                {activeRow?.role}
+              </span>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {userPermissionGroups.map(group => (
+                <div key={group.group} className="rounded-xl border border-gray-100 overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    {group.group}
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {group.features.map(feature => {
+                      const permissions = activeRow?.permissions[feature.id] ?? { view: false, edit: false, export: false }
+
+                      return (
+                        <div key={feature.id} className="grid grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,0.7fr))] gap-3 px-3 py-3 items-center">
+                          <div className="text-sm font-medium text-gray-700">{feature.label}</div>
+                          {(['view', 'edit', 'export'] as PermissionAction[]).map(action => (
+                            <label key={`${feature.id}-${action}`} className="flex items-center justify-center gap-2 text-[11px] text-gray-600 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={permissions[action]}
+                                onChange={e => updatePermission(selectedIndex, feature.id, action, e.target.checked)}
+                                className="accent-stone-700 rounded"
+                              />
+                              <span>{action === 'view' ? 'Xem' : action === 'edit' ? 'Sửa' : 'Xuất'}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Info banner */}
         {showInfo && (
           <div className="mx-6 mb-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start gap-3">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#3b82f6" className="flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12" stroke="white" strokeWidth="2"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="white" strokeWidth="2"/></svg>
@@ -2060,7 +2630,6 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* Footer */}
         <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
           <button className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.36"/></svg>
@@ -2069,7 +2638,12 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
           <div className="flex gap-3">
             <button onClick={onClose} className="px-5 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">Hủy</button>
             <button
-              onClick={onClose}
+              onClick={() => {
+                const validRows = rows.filter(row => row.name.trim() && row.email.trim())
+                if (!validRows.length) return
+                onSave(validRows)
+                onClose()
+              }}
               className="px-6 py-2 bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Lưu
@@ -2082,19 +2656,102 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
 }
 
 function AdminUsers() {
+  const getStoredUsers = () => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (!raw) return defaultUsers
+      const parsed = JSON.parse(raw) as StoredUser[]
+      return parsed.length ? parsed : defaultUsers
+    } catch {
+      return defaultUsers
+    }
+  }
+
   const [tab, setTab] = useState<'all' | 'admin' | 'user'>('all')
   const [showAdd, setShowAdd] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'locked'>('all')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [editingUser, setEditingUser] = useState<StoredUser | null>(null)
+  const [users, setUsers] = useState<StoredUser[]>(getStoredUsers)
+
+  const persistUsers = (nextUsers: StoredUser[]) => {
+    setUsers(nextUsers)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUsers))
+  }
+
+  const handleSaveUsers = (newUsers: UserRow[]) => {
+    const merged: StoredUser[] = newUsers.map((user, index) => ({
+      id: `NV${String(Date.now() + index).slice(-6)}`,
+      name: user.name.trim(),
+      email: user.email.trim(),
+      role: user.role,
+      department: 'CÔNG TY LUẬT TNHH TÂM PHÚC AG',
+      status: 'Đang sử dụng',
+      permissions: user.permissions,
+    }))
+
+    const nextUsers = [...users, ...merged]
+    persistUsers(nextUsers)
+  }
+
+  const handleDeleteUser = (id: string) => {
+    const nextUsers = users.filter((user) => user.id !== id)
+    persistUsers(nextUsers)
+  }
+
+  const handleUpdateUser = (updatedUser: StoredUser) => {
+    const nextUsers = users.map((user) => user.id === updatedUser.id ? updatedUser : user)
+    persistUsers(nextUsers)
+    setShowEdit(false)
+    setEditingUser(null)
+  }
+
+  const toggleUserStatus = (id: string) => {
+    const nextUsers = users.map((user) => {
+      if (user.id !== id) return user
+      return {
+        ...user,
+        status: user.status === 'Đang sử dụng' ? 'Tạm khóa' : 'Đang sử dụng',
+      }
+    })
+    persistUsers(nextUsers)
+  }
+
+  const filteredUsers = users.filter((user) => {
+    const matchesTab =
+      tab === 'all'
+        ? true
+        : tab === 'admin'
+          ? user.role.includes('Quản trị')
+          : !user.role.includes('Quản trị')
+
+    const matchesSearch = !search ||
+      user.name.toLowerCase().includes(search.toLowerCase()) ||
+      user.email.toLowerCase().includes(search.toLowerCase()) ||
+      user.id.toLowerCase().includes(search.toLowerCase())
+
+    const matchesStatus =
+      statusFilter === 'all'
+        ? true
+        : statusFilter === 'active'
+          ? user.status === 'Đang sử dụng'
+          : user.status === 'Tạm khóa'
+
+    const matchesRole = roleFilter === 'all' ? true : user.role === roleFilter
+
+    return matchesTab && matchesSearch && matchesStatus && matchesRole
+  })
 
   const tabs = [
-    { id: 'all', label: 'Tất cả', count: 1 },
-    { id: 'admin', label: 'Quản trị', count: 1 },
-    { id: 'user', label: 'Người dùng', count: 0 },
+    { id: 'all', label: 'Tất cả', count: users.length },
+    { id: 'admin', label: 'Quản trị', count: users.filter(u => u.role.includes('Quản trị')).length },
+    { id: 'user', label: 'Người dùng', count: users.filter(u => !u.role.includes('Quản trị')).length },
   ] as const
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
         <div className="flex items-center gap-1">
           <h2 className="text-base font-bold text-gray-900 mr-4">Quản lý người dùng</h2>
@@ -2124,16 +2781,9 @@ function AdminUsers() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
             Thêm người dùng
           </button>
-          <button className="text-gray-400 hover:text-gray-600">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-          </button>
-          <button className="text-gray-400 hover:text-gray-600">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.36"/></svg>
-          </button>
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-gray-100">
         <div className="relative flex-1 max-w-sm">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><IconSearch /></span>
@@ -2147,58 +2797,110 @@ function AdminUsers() {
         <select className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-600 outline-none bg-white">
           <option>Tất cả đơn vị</option>
         </select>
-        <select className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-600 outline-none bg-white">
-          <option>Tất cả vai trò</option>
-          <option>Quản trị hệ thống</option>
-          <option>Người dùng</option>
+        <select
+          value={roleFilter}
+          onChange={e => setRoleFilter(e.target.value)}
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-600 outline-none bg-white"
+        >
+          <option value="all">Tất cả vai trò</option>
+          <option value="Quản trị hệ thống">Quản trị hệ thống</option>
+          <option value="Quản trị đơn vị">Quản trị đơn vị</option>
+          <option value="Người dùng">Người dùng</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'locked')}
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-600 outline-none bg-white"
+        >
+          <option value="all">Tất cả trạng thái</option>
+          <option value="active">Đang sử dụng</option>
+          <option value="locked">Tạm khóa</option>
         </select>
       </div>
 
-      {/* Table */}
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-white border-b border-gray-100 z-10">
             <tr>
               <th className="w-10 px-4 py-3"><input type="checkbox" className="rounded" /></th>
-              {['Người dùng','Vị trí – Phòng ban','Email','Vai trò','Định mức','Trạng thái sử dụng'].map(h => (
+              {['Người dùng','Vị trí – Phòng ban','Email','Vai trò','Định mức','Trạng thái sử dụng','Thao tác'].map(h => (
                 <th key={h} className="text-left px-3 py-3 text-xs font-medium text-gray-500">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-              <td className="px-4 py-3"><input type="checkbox" className="rounded" /></td>
-              <td className="px-3 py-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">TH</div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Trần Thanh Hiếu</p>
-                    <p className="text-xs text-gray-400">NV000001</p>
-                  </div>
-                </div>
-              </td>
-              <td className="px-3 py-3 text-xs text-gray-600">CÔNG TY LUẬT TNHH TÂM PHÚC AG</td>
-              <td className="px-3 py-3 text-xs text-gray-400">–</td>
-              <td className="px-3 py-3 text-xs text-gray-700">Quản trị hệ thống</td>
-              <td className="px-3 py-3">
-                <p className="text-xs text-gray-700">Định mức mặc định</p>
-                <p className="text-xs text-gray-400">Không giới hạn</p>
-              </td>
-              <td className="px-3 py-3">
-                <span className="text-xs text-green-600 bg-green-50 border border-green-100 px-2.5 py-1 rounded-full font-medium">Đang sử dụng</span>
-              </td>
-            </tr>
+            {filteredUsers.map((user) => {
+              const initials = user.name
+                .split(' ')
+                .slice(-2)
+                .map(part => part[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase()
+
+              return (
+                <tr key={user.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3"><input type="checkbox" className="rounded" /></td>
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{initials}</div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{user.name}</p>
+                        <p className="text-xs text-gray-400">{user.id}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-xs text-gray-600">{user.department}</td>
+                  <td className="px-3 py-3 text-xs text-gray-700">{user.email}</td>
+                  <td className="px-3 py-3 text-xs text-gray-700">{user.role}</td>
+                  <td className="px-3 py-3">
+                    <p className="text-xs text-gray-700">Định mức mặc định</p>
+                    <p className="text-xs text-gray-400">Không giới hạn</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <button
+                      onClick={() => toggleUserStatus(user.id)}
+                      className={`text-xs border px-2.5 py-1 rounded-full font-medium transition-colors ${
+                        user.status === 'Đang sử dụng'
+                          ? 'text-green-600 bg-green-50 border-green-100 hover:bg-green-100'
+                          : 'text-amber-600 bg-amber-50 border-amber-100 hover:bg-amber-100'
+                      }`}
+                    >
+                      {user.status}
+                    </button>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingUser(user)
+                          setShowEdit(true)
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="text-xs text-red-500 hover:text-red-700 font-medium"
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
 
-      {/* Footer */}
       <div className="px-6 py-2.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-        <span>Tổng số: 1</span>
+        <span>Tổng số: {users.length}</span>
         <div className="flex items-center gap-2">
           <span>Số dòng/trang</span>
           <select className="border border-gray-200 rounded px-1.5 py-1 outline-none text-xs"><option>25</option></select>
-          <span>1 – 1</span>
+          <span>1 – {Math.min(users.length, 25)}</span>
           <div className="flex gap-1">
             {['⟨⟨','⟨','⟩','⟩⟩'].map(a => (
               <button key={a} className="px-1.5 py-1 rounded hover:bg-gray-100 text-gray-400">{a}</button>
@@ -2207,19 +2909,29 @@ function AdminUsers() {
         </div>
       </div>
 
-      {showAdd && <AddUserModal onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddUserModal onClose={() => setShowAdd(false)} onSave={handleSaveUsers} />}
+      {showEdit && editingUser && (
+        <EditUserModal
+          user={editingUser}
+          onClose={() => {
+            setShowEdit(false)
+            setEditingUser(null)
+          }}
+          onSave={handleUpdateUser}
+        />
+      )}
     </div>
   )
 }
-
 // ─── Admin Shell ──────────────────────────────────────────────────────────────
 
 function AdminPage({ onBack }: { onBack: () => void }) {
-  const [adminPage, setAdminPage] = useState<'baocao' | 'dinhmuc' | 'users'>('baocao')
+  const [adminPage, setAdminPage] = useState<'baocao' | 'dinhmuc' | 'phanquyen' | 'users'>('baocao')
 
   const menu = [
     { id: 'baocao', label: 'Báo cáo', icon: '📊' },
     { id: 'dinhmuc', label: 'Thiết lập định mức', icon: '⚙️' },
+    { id: 'phanquyen', label: 'Phân quyền tính năng', icon: '🔐' },
     { id: 'users', label: 'Quản lý người dùng', icon: '👥' },
   ] as const
 
@@ -2253,6 +2965,7 @@ function AdminPage({ onBack }: { onBack: () => void }) {
       {/* Admin content */}
       {adminPage === 'baocao' && <AdminBaoCao />}
       {adminPage === 'dinhmuc' && <AdminDinhMuc />}
+      {adminPage === 'phanquyen' && <AdminPhanQuyen />}
       {adminPage === 'users' && <AdminUsers />}
     </div>
   )
