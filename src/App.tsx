@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import logoThanhDanh from './imports/logo thanhdanh.png'
+import logoThanhDanh from './imports/logoThanhDanh.png'
 
 // ─── Icons (inline SVG) ─────────────────────────────────────────────────────
 
