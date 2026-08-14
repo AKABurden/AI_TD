@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react'
+// Bản DANAI đã nối khung chat với phản hồi demo và localStorage.
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import logoThanhDanh from './imports/logoThanhDanh.png'
-
+ 
 // ─── Icons (inline SVG) ─────────────────────────────────────────────────────
 
 const IconChat = () => (
@@ -128,7 +129,63 @@ const IconDoc = () => (
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type Page = 'chat' | 'studio' | 'studio-chart' | 'studio-infographic' | 'studio-slide' | 'notebook' | 'notebook-workspace' | 'assistant' | 'project' | 'tools' | 'history' | 'meeting'
+type ChatRole = 'user' | 'assistant'
 
+type ChatMessage = {
+  id: string
+  role: ChatRole
+  content: string
+  createdAt: string
+  model: string
+}
+
+type ChatConversation = {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  messages: ChatMessage[]
+}
+
+const CHAT_HISTORY_KEY = 'danai-chat-history-v1'
+
+function createId() {
+  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+}
+
+function loadChatHistory(): ChatConversation[] {
+  try {
+    const saved = localStorage.getItem(CHAT_HISTORY_KEY)
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+function getDemoReply(question: string): string {
+  const value = question
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+
+  if (value.includes('credit') || value.includes('so du')) {
+    return 'Tài khoản demo của bạn hiện còn 500 Credit. Bạn có thể gửi yêu cầu nạp Credit từ nút Nạp Credit ở góc trên bên phải.'
+  }
+
+  if (value.includes('notebook') || value.includes('tai lieu')) {
+    return 'Notebook hỗ trợ phân tích dữ liệu và nghiên cứu tài liệu theo nguồn. Bạn có thể tải tài liệu lên, chọn nguồn và đặt câu hỏi trong phạm vi tài liệu.'
+  }
+
+  if (value.includes('cuoc hop') || value.includes('ghi am')) {
+    return 'Ghi chép cuộc họp hỗ trợ ghi âm từ micro, tab trình duyệt hoặc tải file lên. Giới hạn demo là 3 giờ và tối đa 500 MB.'
+  }
+
+  if (value.includes('hinh anh')) {
+    return 'Bạn có thể vào AI Studio để tạo hình ảnh, chỉnh sửa hình ảnh, xóa nền hoặc nâng chất lượng ảnh.'
+  }
+
+  return 'Đây là phản hồi từ chế độ Demo. Hiện tại hệ thống chưa kết nối API AI. Bạn có thể hỏi về Credit, Notebook, AI Studio hoặc ghi chép cuộc họp.'
+}
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
 function Badge({ label, color = 'orange' }: { label: string; color?: string }) {
@@ -599,6 +656,14 @@ function ModelSelector({ selected, onSelect }: { selected: string; onSelect: (id
 function ChatPage({ setShowPromptLib }: { setShowPromptLib: (v: boolean) => void }) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('auto')
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const history = loadChatHistory()
+    return history[0]?.messages ?? []
+  })
+  const [conversationId] = useState(() => loadChatHistory()[0]?.id ?? createId())
+  const [isReplying, setIsReplying] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
   const chips = [
     { icon: '🖼️', label: 'Tạo hình ảnh' },
     { icon: '🎬', label: 'Tạo video' },
@@ -620,73 +685,190 @@ function ChatPage({ setShowPromptLib }: { setShowPromptLib: (v: boolean) => void
     { title: 'Nghiên cứu tài liệu thông minh cùng Notebook', emoji: '📚' },
   ]
 
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 min-h-0 overflow-y-auto">
-      <div className="w-full max-w-2xl">
-        <h1 className="text-2xl font-bold text-gray-900 text-center mb-6">
-          Chào Thành Danh 👋
-        </h1>
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
 
-        {/* Chat input */}
-        <div className="relative border-2 border-stone-300 rounded-2xl bg-white shadow-sm focus-within:border-stone-500 transition-colors mb-4">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Hỏi tôi bất cứ điều gì"
-            className="w-full px-4 pt-4 pb-14 text-sm text-gray-800 placeholder-gray-400 resize-none outline-none bg-transparent rounded-2xl min-h-[80px]"
-            rows={2}
-          />
-          <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
-              <button className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="3" height="9"/><rect x="14" y="7" width="3" height="5"/></svg></button>
-              <button
-                onClick={() => setShowPromptLib(true)}
-                className="text-gray-400 hover:text-stone-700 p-1 rounded transition-colors text-xs flex items-center gap-1"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                <span>Câu lệnh mẫu</span>
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <ModelSelector selected={selectedModel} onSelect={setSelectedModel} />
-              <button className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></button>
-              <button
-                disabled={!input.trim()}
-                className="w-8 h-8 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center transition-colors"
-              >
-                <IconSend />
-              </button>
-            </div>
-          </div>
+    if (messages.length === 0) return
+
+    const now = new Date().toISOString()
+    const oldHistory = loadChatHistory()
+    const oldConversation = oldHistory.find(item => item.id === conversationId)
+    const firstQuestion = messages.find(message => message.role === 'user')?.content
+    const conversation: ChatConversation = {
+      id: conversationId,
+      title: oldConversation?.title ?? firstQuestion?.slice(0, 50) ?? 'Cuộc trò chuyện mới',
+      createdAt: oldConversation?.createdAt ?? now,
+      updatedAt: now,
+      messages,
+    }
+
+    localStorage.setItem(
+      CHAT_HISTORY_KEY,
+      JSON.stringify([
+        conversation,
+        ...oldHistory.filter(item => item.id !== conversationId),
+      ].slice(0, 30)),
+    )
+  }, [conversationId, messages])
+
+  const handleSend = () => {
+    const question = input.trim()
+    if (!question || isReplying) return
+
+    const userMessage: ChatMessage = {
+      id: createId(),
+      role: 'user',
+      content: question,
+      createdAt: new Date().toISOString(),
+      model: selectedModel,
+    }
+
+    setMessages(current => [...current, userMessage])
+    setInput('')
+    setIsReplying(true)
+
+    window.setTimeout(() => {
+      const assistantMessage: ChatMessage = {
+        id: createId(),
+        role: 'assistant',
+        content: getDemoReply(question),
+        createdAt: new Date().toISOString(),
+        model: selectedModel,
+      }
+
+      setMessages(current => [...current, assistantMessage])
+      setIsReplying(false)
+    }, 600)
+  }
+
+  const composer = (
+    <div className="relative border-2 border-stone-300 rounded-2xl bg-white shadow-sm focus-within:border-stone-500 transition-colors">
+      <textarea
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            handleSend()
+          }
+        }}
+        placeholder="Hỏi tôi bất cứ điều gì"
+        className="w-full px-4 pt-4 pb-14 text-sm text-gray-800 placeholder-gray-400 resize-none outline-none bg-transparent rounded-2xl min-h-[80px]"
+        rows={2}
+      />
+      <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button type="button" className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors" aria-label="Đính kèm tệp"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+          <button type="button" className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors" aria-label="Mở công cụ"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="3" height="9"/><rect x="14" y="7" width="3" height="5"/></svg></button>
+          <button
+            type="button"
+            onClick={() => setShowPromptLib(true)}
+            className="text-gray-400 hover:text-stone-700 p-1 rounded transition-colors text-xs flex items-center gap-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            <span>Câu lệnh mẫu</span>
+          </button>
         </div>
-
-        {/* Quick action chips */}
-        <div className="flex flex-wrap gap-2 justify-center mb-8">
-          {chips.map(chip => (
-            <button
-              key={chip.label}
-              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 hover:border-stone-200 hover:text-stone-800 hover:bg-stone-50 transition-all"
-            >
-              <span>{chip.icon}</span>
-              <span>{chip.label}</span>
-              {chip.new && <Badge label="Mới" />}
-            </button>
-          ))}
-        </div>
-
-        {/* Suggestion cards */}
-        <div className="relative">
-          <div className="flex gap-3 overflow-hidden">
-            {suggestions.map((s, i) => (
-              <div key={i} className="flex-1 min-w-0 bg-gradient-to-br from-amber-50 to-stone-50 border border-stone-100 rounded-xl p-4 cursor-pointer hover:border-stone-200 transition-all group">
-                <p className="text-sm font-medium text-gray-700 mb-1 group-hover:text-stone-800">{s.title}</p>
-                <p className="text-xs text-stone-700 flex items-center gap-1 mt-2">Thử ngay <IconArrowRight /></p>
-              </div>
-            ))}
-          </div>
+        <div className="flex items-center gap-2">
+          <ModelSelector selected={selectedModel} onSelect={setSelectedModel} />
+          <button type="button" className="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors" aria-label="Nhập bằng giọng nói"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!input.trim() || isReplying}
+            aria-label="Gửi tin nhắn"
+            className="w-8 h-8 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center transition-colors"
+          >
+            <IconSend />
+          </button>
         </div>
       </div>
+    </div>
+  )
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 bg-white">
+      {messages.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 overflow-y-auto">
+          <div className="w-full max-w-2xl">
+            <h1 className="text-2xl font-bold text-gray-900 text-center mb-6">
+              Chào Thành Danh 👋
+            </h1>
+
+            <div className="mb-4">{composer}</div>
+
+            <div className="flex flex-wrap gap-2 justify-center mb-8">
+              {chips.map(chip => (
+                <button
+                  type="button"
+                  key={chip.label}
+                  onClick={() => setInput(chip.label)}
+                  className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 hover:border-stone-200 hover:text-stone-800 hover:bg-stone-50 transition-all"
+                >
+                  <span>{chip.icon}</span>
+                  <span>{chip.label}</span>
+                  {chip.new && <Badge label="Mới" />}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative">
+              <div className="flex gap-3 overflow-hidden">
+                {suggestions.map((suggestion, index) => (
+                  <button
+                    type="button"
+                    key={index}
+                    onClick={() => setInput(suggestion.title)}
+                    className="flex-1 min-w-0 text-left bg-gradient-to-br from-amber-50 to-stone-50 border border-stone-100 rounded-xl p-4 hover:border-stone-200 transition-all group"
+                  >
+                    <p className="text-sm font-medium text-gray-700 mb-1 group-hover:text-stone-800">{suggestion.title}</p>
+                    <p className="text-xs text-stone-700 flex items-center gap-1 mt-2">Thử ngay <IconArrowRight /></p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="flex-1 overflow-y-auto px-6 py-8">
+            <div className="w-full max-w-3xl mx-auto space-y-5">
+              {messages.map(message => (
+                <div
+                  key={message.id}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
+                      message.role === 'user'
+                        ? 'bg-stone-700 text-white rounded-br-md'
+                        : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                </div>
+              ))}
+
+              {isReplying && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-bl-md px-4 py-3 text-sm">
+                    DANAI đang trả lời...
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100 bg-white px-6 py-4">
+            <div className="w-full max-w-3xl mx-auto">{composer}</div>
+            <p className="text-[11px] text-gray-400 text-center mt-2">
+              Chế độ demo — Enter để gửi, Shift + Enter để xuống dòng
+            </p>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -879,6 +1061,28 @@ function NotebookPage({ setPage }: { setPage: (p: Page) => void }) {
 
 function NotebookWorkspace({ setPage }: { setPage: (p: Page) => void }) {
   const [input, setInput] = useState('')
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+  try {
+    const saved = localStorage.getItem('danai-chat-messages')
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+})
+
+const [isReplying, setIsReplying] = useState(false)
+const bottomRef = useRef<HTMLDivElement | null>(null)
+
+useEffect(() => {
+  localStorage.setItem(
+    'danai-chat-messages',
+    JSON.stringify(messages)
+  )
+}, [messages])
+
+useEffect(() => {
+  bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+}, [messages.length, isReplying])
   const outputs = [
     { name: 'Mindmap', icon: '🗺️', soon: true },
     { name: 'Infographic', icon: '📊', soon: true },
