@@ -168,7 +168,29 @@ type NotebookAnalysis = {
   recommendations: string[]
 }
 
+type CreditTransaction = {
+  id: string
+  type: 'usage' | 'topup'
+  amount: number
+  description: string
+  createdAt: string
+  balanceAfter: number
+}
+
+type ProjectData = {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+  updatedAt: string
+  conversations: ChatConversation[]
+}
+
 const CHAT_HISTORY_KEY = 'danai-chat-history-v1'
+const PROJECTS_STORAGE_KEY = 'danai-projects-v1'
+const CREDIT_BALANCE_KEY = 'danai-credit-balance-v1'
+const CREDIT_TRANSACTIONS_KEY = 'danai-credit-transactions-v1'
+const DEFAULT_CREDIT_BALANCE = 500
 
 function createId() {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
@@ -178,6 +200,36 @@ function loadChatHistory(): ChatConversation[] {
   try {
     const saved = localStorage.getItem(CHAT_HISTORY_KEY)
     return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+function loadCreditBalance(): number {
+  try {
+    const saved = localStorage.getItem(CREDIT_BALANCE_KEY)
+    const value = saved === null ? DEFAULT_CREDIT_BALANCE : Number(saved)
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_CREDIT_BALANCE
+  } catch {
+    return DEFAULT_CREDIT_BALANCE
+  }
+}
+
+function loadCreditTransactions(): CreditTransaction[] {
+  try {
+    const saved = localStorage.getItem(CREDIT_TRANSACTIONS_KEY)
+    const parsed = saved ? JSON.parse(saved) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function loadProjects(): ProjectData[] {
+  try {
+    const saved = localStorage.getItem(PROJECTS_STORAGE_KEY)
+    const parsed = saved ? JSON.parse(saved) : []
+    return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
   }
@@ -430,7 +482,10 @@ const creditLevels = [
   { value: 10000, label: '10.000 Credit', price: '800.000 đ', popular: false },
 ]
 
-function NapCreditModal({ onClose }: { onClose: () => void }) {
+function NapCreditModal({ onClose, onAddCredit }: {
+  onClose: () => void
+  onAddCredit: (amount: number, description: string) => void
+}) {
   const [selected, setSelected] = useState(1000)
   const [reason, setReason] = useState('')
   const [submitted, setSubmitted] = useState(false)
@@ -440,8 +495,8 @@ function NapCreditModal({ onClose }: { onClose: () => void }) {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center text-3xl mb-4">✅</div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">Yêu cầu đã được gửi!</h2>
-          <p className="text-sm text-gray-500 mb-6">Quản trị viên sẽ xem xét và xử lý yêu cầu nạp credit của bạn trong thời gian sớm nhất.</p>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Nạp Credit thành công!</h2>
+          <p className="text-sm text-gray-500 mb-6">Đã cộng {selected.toLocaleString('vi-VN')} Credit vào tài khoản demo của bạn.</p>
           <button onClick={onClose} className="px-8 py-2.5 bg-stone-700 hover:bg-stone-800 text-white rounded-xl text-sm font-medium transition-colors">
             Đóng
           </button>
@@ -457,7 +512,7 @@ function NapCreditModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Nạp Credit</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Chọn mức credit và gửi yêu cầu tới quản trị viên</p>
+            <p className="text-xs text-gray-400 mt-0.5">Chọn số Credit cần cộng vào tài khoản demo</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><IconX /></button>
         </div>
@@ -501,12 +556,12 @@ function NapCreditModal({ onClose }: { onClose: () => void }) {
           {/* Reason input */}
           <div>
             <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Lý do yêu cầu <span className="text-red-400">*</span>
+              Ghi chú <span className="text-gray-400 font-normal">(không bắt buộc)</span>
             </label>
             <textarea
               value={reason}
               onChange={e => setReason(e.target.value)}
-              placeholder="Nhập lý do bạn cần nạp thêm credit (ví dụ: phục vụ dự án Q3, tạo nội dung marketing...)"
+              placeholder="Ví dụ: bổ sung Credit để thử nghiệm Notebook"
               rows={3}
               maxLength={300}
               className="w-full px-4 py-3 text-sm border-2 border-gray-200 focus:border-stone-400 rounded-xl outline-none resize-none placeholder-gray-400 transition-colors"
@@ -531,11 +586,13 @@ function NapCreditModal({ onClose }: { onClose: () => void }) {
             Hủy
           </button>
           <button
-            onClick={() => reason.trim() && setSubmitted(true)}
-            disabled={!reason.trim()}
-            className="px-6 py-2 bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-medium rounded-lg transition-colors"
+            onClick={() => {
+              onAddCredit(selected, reason.trim() || 'Nạp Credit từ tài khoản người dùng')
+              setSubmitted(true)
+            }}
+            className="px-6 py-2 bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            Gửi yêu cầu
+            Xác nhận nạp
           </button>
         </div>
       </div>
@@ -543,9 +600,15 @@ function NapCreditModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function TopBar({ setShowPromptLib, setPage }: { setShowPromptLib: (v: boolean) => void; setPage: (p: Page) => void }) {
+function TopBar({ setShowPromptLib, creditBalance, creditTransactions, onAddCredit }: {
+  setShowPromptLib: (v: boolean) => void
+  creditBalance: number
+  creditTransactions: CreditTransaction[]
+  onAddCredit: (amount: number, description: string) => void
+}) {
   const [showCreditPopup, setShowCreditPopup] = useState(false)
   const [showNapModal, setShowNapModal] = useState(false)
+  const [showCreditHistory, setShowCreditHistory] = useState(false)
 
   return (
     <>
@@ -565,7 +628,7 @@ function TopBar({ setShowPromptLib, setPage }: { setShowPromptLib: (v: boolean) 
             className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-200 hover:bg-gray-100 transition-colors"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="#92400e"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            <span className="text-sm font-semibold text-gray-700">500</span>
+            <span className="text-sm font-semibold text-gray-700">{creditBalance.toLocaleString('vi-VN')}</span>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
 
@@ -575,7 +638,11 @@ function TopBar({ setShowPromptLib, setPage }: { setShowPromptLib: (v: boolean) 
               <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-gray-100 z-20 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-bold text-gray-900">Số credit còn lại</span>
-                  <button className="text-xs text-stone-700 hover:underline flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreditHistory(value => !value)}
+                    className="text-xs text-stone-700 hover:underline flex items-center gap-1"
+                  >
                     Lịch sử biến động Credit <IconArrowRight />
                   </button>
                 </div>
@@ -584,10 +651,13 @@ function TopBar({ setShowPromptLib, setPage }: { setShowPromptLib: (v: boolean) 
                     <div className="flex items-center gap-2 mb-1.5">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
                       <span className="text-sm text-gray-700">Credit công ty</span>
-                      <span className="ml-auto text-sm font-bold text-gray-900">500</span>
+                      <span className="ml-auto text-sm font-bold text-gray-900">{creditBalance.toLocaleString('vi-VN')}</span>
                     </div>
                     <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-green-400 to-green-500 rounded-full" style={{ width: '80%' }} />
+                      <div
+                        className="h-full bg-gradient-to-r from-green-400 to-green-500 rounded-full"
+                        style={{ width: `${Math.min((creditBalance / DEFAULT_CREDIT_BALANCE) * 100, 100)}%` }}
+                      />
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -596,6 +666,28 @@ function TopBar({ setShowPromptLib, setPage }: { setShowPromptLib: (v: boolean) 
                     <span className="ml-auto font-semibold text-gray-900">12/09/2026</span>
                   </div>
                 </div>
+                {showCreditHistory && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">Giao dịch gần đây</p>
+                    {creditTransactions.length === 0 ? (
+                      <p className="text-xs text-gray-400 py-2">Chưa có giao dịch Credit.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                        {creditTransactions.slice(0, 8).map(transaction => (
+                          <div key={transaction.id} className="flex items-start gap-2 text-xs">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-gray-700 truncate">{transaction.description}</p>
+                              <p className="text-[10px] text-gray-400">{new Date(transaction.createdAt).toLocaleString('vi-VN')}</p>
+                            </div>
+                            <span className={`font-semibold ${transaction.type === 'topup' ? 'text-green-600' : 'text-red-500'}`}>
+                              {transaction.type === 'topup' ? '+' : '-'}{transaction.amount}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <button
                   onClick={() => { setShowCreditPopup(false); setShowNapModal(true) }}
                   className="mt-4 w-full py-2 bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium rounded-xl transition-colors"
@@ -628,7 +720,12 @@ function TopBar({ setShowPromptLib, setPage }: { setShowPromptLib: (v: boolean) 
         </div>
       </header>
 
-      {showNapModal && <NapCreditModal onClose={() => setShowNapModal(false)} />}
+      {showNapModal && (
+        <NapCreditModal
+          onClose={() => setShowNapModal(false)}
+          onAddCredit={onAddCredit}
+        />
+      )}
     </>
   )
 }
@@ -792,10 +889,12 @@ function ModelSelector({ selected, onSelect }: { selected: string; onSelect: (id
 
 // ─── Page: Chat ─────────────────────────────────────────────────────────────
 
-function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
+function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditBalance, onSpendCredits }: {
   setShowPromptLib: (v: boolean) => void
   conversationId: string
   onNewConversation: () => void
+  creditBalance: number
+  onSpendCredits: (amount: number, description: string) => number | null
 }) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('auto')
@@ -804,6 +903,7 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
     return history.find(item => item.id === conversationId)?.messages ?? []
   })
   const [isReplying, setIsReplying] = useState(false)
+  const [creditError, setCreditError] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const replyTimerRef = useRef<number | null>(null)
 
@@ -866,6 +966,14 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
     const question = input.trim()
     if (!question || isReplying) return
 
+    const remainingCredit = onSpendCredits(2, 'Truy vấn text trong Trò chuyện')
+    if (remainingCredit === null) {
+      setCreditError('Không đủ Credit. Truy vấn text cần 2 Credit. Vui lòng nạp thêm Credit.')
+      return
+    }
+
+    setCreditError('')
+
     const userMessage: ChatMessage = {
       id: createId(),
       role: 'user',
@@ -882,7 +990,7 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
       const assistantMessage: ChatMessage = {
         id: createId(),
         role: 'assistant',
-        content: getDemoReply(question),
+        content: getDemoReply(question, remainingCredit),
         createdAt: new Date().toISOString(),
         model: selectedModel,
       }
@@ -897,7 +1005,10 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
     <div className="relative border-2 border-stone-300 rounded-2xl bg-white shadow-sm focus-within:border-stone-500 transition-colors">
       <textarea
         value={input}
-        onChange={e => setInput(e.target.value)}
+        onChange={e => {
+          setInput(e.target.value)
+          if (creditError) setCreditError('')
+        }}
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
@@ -928,6 +1039,7 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
             type="button"
             onClick={handleSend}
             disabled={!input.trim() || isReplying}
+            title={creditBalance < 2 ? 'Không đủ Credit' : 'Gửi tin nhắn · 2 Credit'}
             aria-label="Gửi tin nhắn"
             className="w-8 h-8 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center transition-colors"
           >
@@ -947,7 +1059,13 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
               Chào Thành Danh 👋
             </h1>
 
-            <div className="mb-4">{composer}</div>
+            <div className="mb-4">
+              {composer}
+              <div className="flex items-center justify-between mt-2 px-1 text-[11px]">
+                <span className="text-gray-400">⚡ Truy vấn text: 2 Credit</span>
+                {creditError && <span className="text-red-500 text-right">{creditError}</span>}
+              </div>
+            </div>
 
             <div className="flex flex-wrap gap-2 justify-center mb-8">
               {chips.map(chip => (
@@ -1032,9 +1150,10 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
 
           <div className="border-t border-gray-100 bg-white px-6 py-4">
             <div className="w-full max-w-3xl mx-auto">{composer}</div>
-            <p className="text-[11px] text-gray-400 text-center mt-2">
-              Chế độ demo — Enter để gửi, Shift + Enter để xuống dòng
-            </p>
+            <div className="w-full max-w-3xl mx-auto flex items-center justify-between mt-2 text-[11px]">
+              <span className="text-gray-400">Chế độ demo — Enter để gửi · Mỗi truy vấn: 2 Credit</span>
+              {creditError && <span className="text-red-500 text-right">{creditError}</span>}
+            </div>
           </div>
         </>
       )}
@@ -1234,9 +1353,11 @@ function NotebookPage({ setPage, onSelectMode }: {
 
 // ─── Page: Notebook Workspace ────────────────────────────────────────────────
 
-function NotebookWorkspace({ setPage, mode }: {
+function NotebookWorkspace({ setPage, mode, creditBalance, onSpendCredits }: {
   setPage: (p: Page) => void
   mode: NotebookMode
+  creditBalance: number
+  onSpendCredits: (amount: number, description: string) => number | null
 }) {
   const [input, setInput] = useState('')
   const [sources, setSources] = useState<NotebookSource[]>([])
@@ -1244,6 +1365,7 @@ function NotebookWorkspace({ setPage, mode }: {
   const [analysis, setAnalysis] = useState<NotebookAnalysis | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [creditError, setCreditError] = useState('')
   const [questionResult, setQuestionResult] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const sourceFilesRef = useRef<Map<string, File>>(new Map())
@@ -1267,7 +1389,6 @@ function NotebookWorkspace({ setPage, mode }: {
     setAnalysis(null)
     setQuestionResult('')
     setIsAnalyzing(true)
-    setUploadError('')
 
     try {
       const result = await analyzeNotebookFile(selectedFile, sourceId)
@@ -1295,6 +1416,17 @@ function NotebookWorkspace({ setPage, mode }: {
     }
 
     if (!validFiles.length) return
+
+    const fileCost = validFiles.length * 5
+    const remainingCredit = onSpendCredits(
+      fileCost,
+      `Phân tích ${validFiles.length} tài liệu trong Notebook`,
+    )
+    if (remainingCredit === null) {
+      setCreditError(`Không đủ Credit. ${validFiles.length} tài liệu cần ${fileCost} Credit, số dư hiện tại là ${creditBalance} Credit.`)
+      return
+    }
+    setCreditError('')
 
     const newSources = validFiles.map(file => {
       const source: NotebookSource = {
@@ -1332,6 +1464,13 @@ function NotebookWorkspace({ setPage, mode }: {
   const handleQuestion = () => {
     const question = input.trim()
     if (!question || !analysis) return
+
+    const remainingCredit = onSpendCredits(2, `Truy vấn text về tài liệu ${analysis.fileName}`)
+    if (remainingCredit === null) {
+      setCreditError('Không đủ Credit. Truy vấn text cần 2 Credit. Vui lòng nạp thêm Credit.')
+      return
+    }
+    setCreditError('')
 
     setQuestionResult(
       `Dựa trên phân tích cơ bản của “${analysis.fileName}”: ${analysis.assessments[0]} ${
@@ -1405,6 +1544,7 @@ function NotebookWorkspace({ setPage, mode }: {
             <IconPlus /> Thêm tài liệu
           </button>
           <p className="text-[10px] text-gray-400 text-center mt-2">PDF, Word, Excel, TXT · tối đa 20 MB</p>
+          <p className="text-[10px] text-amber-700 text-center mt-1">⚡ 5 Credit / tài liệu</p>
         </div>
       </div>
 
@@ -1424,6 +1564,12 @@ function NotebookWorkspace({ setPage, mode }: {
           {uploadError && (
             <div className="max-w-3xl mx-auto mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
               {uploadError}
+            </div>
+          )}
+
+          {creditError && (
+            <div className="max-w-3xl mx-auto mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {creditError}
             </div>
           )}
 
@@ -1551,7 +1697,10 @@ function NotebookWorkspace({ setPage, mode }: {
           <div className="border border-gray-200 rounded-xl p-3 bg-white">
             <textarea
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {
+                setInput(e.target.value)
+                if (creditError) setCreditError('')
+              }}
               onKeyDown={event => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
@@ -1563,7 +1712,9 @@ function NotebookWorkspace({ setPage, mode }: {
               rows={2}
             />
             <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-gray-400">Đang dùng {sources.length} nguồn</span>
+              <span className="text-xs text-gray-400">
+                Đang dùng {sources.length} nguồn · Số dư {creditBalance.toLocaleString('vi-VN')} Credit
+              </span>
               <div className="flex items-center gap-2">
                 <button className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 flex items-center gap-1">
                   <span>🤖</span> GPT 5.4 ▾
@@ -1571,12 +1722,19 @@ function NotebookWorkspace({ setPage, mode }: {
                 <button type="button" onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-gray-600" aria-label="Đính kèm tài liệu">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <button type="button" onClick={handleQuestion} disabled={!input.trim() || !analysis} className="w-7 h-7 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center transition-colors">
+                <button
+                  type="button"
+                  onClick={handleQuestion}
+                  disabled={!input.trim() || !analysis}
+                  title="Gửi truy vấn · 2 Credit"
+                  className="w-7 h-7 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center transition-colors"
+                >
                   <IconSend />
                 </button>
               </div>
             </div>
           </div>
+          <p className="text-[10px] text-gray-400 text-right mt-1">Truy vấn text: 2 Credit</p>
         </div>
       </div>
 
@@ -1917,66 +2075,479 @@ function MeetingPage() {
 
 // ─── Page: Dự án ─────────────────────────────────────────────────────────────
 
-function ProjectPage() {
+function CreateProjectModal({ onClose, onCreate }: {
+  onClose: () => void
+  onCreate: (name: string, description: string) => void
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Tạo dự án mới</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Dự án sẽ có không gian và lịch sử trò chuyện riêng.</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600"><IconX /></button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tên dự án <span className="text-red-400">*</span></label>
+            <input
+              autoFocus
+              value={name}
+              onChange={event => setName(event.target.value.slice(0, 80))}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && name.trim()) onCreate(name.trim(), description.trim())
+              }}
+              placeholder="Ví dụ: Triển khai ERP Phase 1"
+              className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none focus:border-stone-400"
+            />
+            <p className="text-[11px] text-gray-400 text-right mt-1">{name.length}/80</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Mô tả</label>
+            <textarea
+              value={description}
+              onChange={event => setDescription(event.target.value.slice(0, 300))}
+              placeholder="Mục tiêu, phạm vi hoặc thông tin cần ghi nhớ trong dự án"
+              rows={4}
+              className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-sm outline-none resize-none focus:border-stone-400"
+            />
+            <p className="text-[11px] text-gray-400 text-right mt-1">{description.length}/300</p>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-gray-100 px-6 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg border border-gray-200 px-5 py-2 text-sm text-gray-600 hover:bg-gray-50">Hủy</button>
+          <button
+            type="button"
+            disabled={!name.trim()}
+            onClick={() => onCreate(name.trim(), description.trim())}
+            className="rounded-lg bg-stone-700 px-6 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:bg-gray-200 disabled:text-gray-400"
+          >
+            Tạo và trò chuyện
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProjectWorkspace({ project, onBack, onUpdateProject, creditBalance, onSpendCredits }: {
+  project: ProjectData
+  onBack: () => void
+  onUpdateProject: (projectId: string, updater: (project: ProjectData) => ProjectData) => void
+  creditBalance: number
+  onSpendCredits: (amount: number, description: string) => number | null
+}) {
+  const [activeConversationId, setActiveConversationId] = useState(() => project.conversations[0]?.id ?? '')
+  const [input, setInput] = useState('')
+  const [isReplying, setIsReplying] = useState(false)
+  const [creditError, setCreditError] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const replyTimerRef = useRef<number | null>(null)
+
+  const activeConversation = project.conversations.find(item => item.id === activeConversationId)
+    ?? project.conversations[0]
+  const messages = activeConversation?.messages ?? []
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages.length, isReplying])
+
+  useEffect(() => {
+    return () => {
+      if (replyTimerRef.current !== null) window.clearTimeout(replyTimerRef.current)
+    }
+  }, [])
+
+  const createNewConversation = () => {
+    if (isReplying) return
+
+    const now = new Date().toISOString()
+    const conversation: ChatConversation = {
+      id: createId(),
+      title: 'Cuộc trò chuyện mới',
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    }
+    onUpdateProject(project.id, current => ({
+      ...current,
+      updatedAt: now,
+      conversations: [conversation, ...current.conversations],
+    }))
+    setActiveConversationId(conversation.id)
+    setInput('')
+    setCreditError('')
+  }
+
+  const appendMessage = (conversationId: string, message: ChatMessage) => {
+    const now = new Date().toISOString()
+    onUpdateProject(project.id, current => {
+      const selectedConversation = current.conversations.find(conversation => conversation.id === conversationId)
+      if (!selectedConversation) return current
+
+      const isFirstQuestion = message.role === 'user'
+        && !selectedConversation.messages.some(item => item.role === 'user')
+      const updatedConversation: ChatConversation = {
+        ...selectedConversation,
+        title: isFirstQuestion ? message.content.slice(0, 55) : selectedConversation.title,
+        updatedAt: now,
+        messages: [...selectedConversation.messages, message],
+      }
+
+      return {
+        ...current,
+        updatedAt: now,
+        conversations: [
+          updatedConversation,
+          ...current.conversations.filter(conversation => conversation.id !== conversationId),
+        ],
+      }
+    })
+  }
+
+  const handleSend = () => {
+    const question = input.trim()
+    if (!question || isReplying || !activeConversation) return
+
+    const remainingCredit = onSpendCredits(2, `Truy vấn text trong dự án ${project.name}`)
+    if (remainingCredit === null) {
+      setCreditError('Không đủ Credit. Truy vấn trong dự án cần 2 Credit.')
+      return
+    }
+
+    const conversationId = activeConversation.id
+    const userMessage: ChatMessage = {
+      id: createId(),
+      role: 'user',
+      content: question,
+      createdAt: new Date().toISOString(),
+      model: 'auto',
+    }
+    appendMessage(conversationId, userMessage)
+    setInput('')
+    setCreditError('')
+    setIsReplying(true)
+
+    replyTimerRef.current = window.setTimeout(() => {
+      const normalizedQuestion = question.toLowerCase()
+      const reply = normalizedQuestion.includes('credit') || normalizedQuestion.includes('số dư')
+        ? getDemoReply(question, remainingCredit)
+        : `Đây là phản hồi demo trong dự án “${project.name}”. Nội dung bạn vừa hỏi đã được lưu vào lịch sử riêng của dự án. Khi kết nối AI Gateway, DANAI sẽ sử dụng mô tả và các cuộc trò chuyện trong dự án làm ngữ cảnh trả lời.`
+      appendMessage(conversationId, {
+        id: createId(),
+        role: 'assistant',
+        content: reply,
+        createdAt: new Date().toISOString(),
+        model: 'auto',
+      })
+      setIsReplying(false)
+      replyTimerRef.current = null
+    }, 600)
+  }
+
+  return (
+    <div className="flex-1 flex min-h-0 overflow-hidden bg-white">
+      <aside className="w-72 flex-shrink-0 border-r border-gray-100 bg-gray-50/60 flex flex-col">
+        <div className="border-b border-gray-100 p-3">
+          <button type="button" onClick={onBack} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-3">
+            ← Tất cả dự án
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-stone-700 text-white flex items-center justify-center"><IconFolder /></div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-gray-900 truncate">{project.name}</h2>
+              <p className="text-[11px] text-gray-400">{project.conversations.length} cuộc trò chuyện</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3">
+          <button
+            type="button"
+            onClick={createNewConversation}
+            disabled={isReplying}
+            className="w-full flex items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+          >
+            <IconPlus /> Cuộc trò chuyện mới
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 pb-3">
+          <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Lịch sử trong dự án</p>
+          <div className="space-y-1">
+            {project.conversations.map(conversation => (
+              <button
+                type="button"
+                key={conversation.id}
+                onClick={() => setActiveConversationId(conversation.id)}
+                className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
+                  activeConversation?.id === conversation.id ? 'bg-stone-100 text-stone-900' : 'text-gray-600 hover:bg-white'
+                }`}
+              >
+                <p className="text-xs font-medium truncate">{conversation.title}</p>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {conversation.messages.length} tin nhắn · {new Date(conversation.updatedAt).toLocaleDateString('vi-VN')}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      <section className="flex-1 flex flex-col min-w-0">
+        <div className="h-14 flex-shrink-0 border-b border-gray-100 px-5 flex items-center justify-between">
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold text-gray-900 truncate">{activeConversation?.title ?? 'Cuộc trò chuyện mới'}</h1>
+            <p className="text-[11px] text-gray-400 truncate">{project.description || 'Không gian trò chuyện riêng của dự án'}</p>
+          </div>
+          <span className="text-xs text-gray-400">Số dư: {creditBalance.toLocaleString('vi-VN')} Credit</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-8">
+          <div className="w-full max-w-3xl mx-auto">
+            {messages.length === 0 ? (
+              <div className="min-h-[420px] flex flex-col items-center justify-center text-center">
+                <div className="w-16 h-16 rounded-2xl bg-stone-100 text-stone-700 flex items-center justify-center mb-4"><IconFolder /></div>
+                <h2 className="text-xl font-bold text-gray-900">Bắt đầu với {project.name}</h2>
+                <p className="text-sm text-gray-500 mt-2 max-w-md">
+                  Cuộc trò chuyện này được lưu riêng trong dự án và có thể mở lại từ danh sách lịch sử bên trái.
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 mt-5">
+                  {['Tóm tắt mục tiêu dự án', 'Lập danh sách công việc', 'Phân tích rủi ro'].map(suggestion => (
+                    <button
+                      type="button"
+                      key={suggestion}
+                      onClick={() => setInput(suggestion)}
+                      className="rounded-full border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:border-stone-300 hover:bg-stone-50"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {messages.map(message => (
+                  <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${
+                      message.role === 'user'
+                        ? 'rounded-br-md bg-stone-700 text-white'
+                        : 'rounded-bl-md bg-gray-100 text-gray-800'
+                    }`}>
+                      {message.content}
+                    </div>
+                  </div>
+                ))}
+                {isReplying && (
+                  <div className="flex justify-start">
+                    <div className="rounded-2xl rounded-bl-md bg-gray-100 px-4 py-3 text-sm text-gray-500">DANAI đang trả lời...</div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        <div className="border-t border-gray-100 bg-white px-6 py-4">
+          <div className="w-full max-w-3xl mx-auto">
+            <div className="relative rounded-2xl border-2 border-stone-300 bg-white shadow-sm focus-within:border-stone-500">
+              <textarea
+                value={input}
+                onChange={event => {
+                  setInput(event.target.value)
+                  if (creditError) setCreditError('')
+                }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault()
+                    handleSend()
+                  }
+                }}
+                placeholder={`Hỏi trong dự án ${project.name}`}
+                rows={2}
+                className="min-h-[76px] w-full resize-none rounded-2xl bg-transparent px-4 pb-12 pt-4 text-sm text-gray-800 outline-none"
+              />
+              <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
+                <span className="text-[11px] text-gray-400">Ngữ cảnh: {project.name} · 2 Credit</span>
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={!input.trim() || isReplying}
+                  className="w-8 h-8 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center"
+                >
+                  <IconSend />
+                </button>
+              </div>
+            </div>
+            {creditError && <p className="text-xs text-red-500 text-right mt-2">{creditError}</p>}
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ProjectPage({ creditBalance, onSpendCredits }: {
+  creditBalance: number
+  onSpendCredits: (amount: number, description: string) => number | null
+}) {
   const [tab, setTab] = useState('Tất cả')
   const [search, setSearch] = useState('')
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [projects, setProjects] = useState<ProjectData[]>(loadProjects)
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const tabs = ['Tất cả', 'Dự án của tôi']
+
+  useEffect(() => {
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects))
+  }, [projects])
+
+  const createProject = (name: string, description: string) => {
+    const now = new Date().toISOString()
+    const firstConversation: ChatConversation = {
+      id: createId(),
+      title: 'Cuộc trò chuyện mới',
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    }
+    const project: ProjectData = {
+      id: createId(),
+      name,
+      description,
+      createdAt: now,
+      updatedAt: now,
+      conversations: [firstConversation],
+    }
+    setProjects(current => [project, ...current])
+    setShowCreateModal(false)
+    setActiveProjectId(project.id)
+  }
+
+  const updateProject = (projectId: string, updater: (project: ProjectData) => ProjectData) => {
+    setProjects(current => current.map(project => project.id === projectId ? updater(project) : project))
+  }
+
+  const activeProject = projects.find(project => project.id === activeProjectId)
+  if (activeProject) {
+    return (
+      <ProjectWorkspace
+        key={activeProject.id}
+        project={activeProject}
+        onBack={() => setActiveProjectId(null)}
+        onUpdateProject={updateProject}
+        creditBalance={creditBalance}
+        onSpendCredits={onSpendCredits}
+      />
+    )
+  }
+
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredProjects = projects
+    .filter(project => {
+      return !normalizedSearch
+        || project.name.toLowerCase().includes(normalizedSearch)
+        || project.description.toLowerCase().includes(normalizedSearch)
+    })
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto px-8 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dự án</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Tạo không gian làm việc riêng biệt cho từng mục tiêu</p>
+          <p className="text-sm text-gray-500 mt-0.5">Tạo không gian làm việc và lưu lịch sử trò chuyện riêng cho từng mục tiêu</p>
         </div>
-        <button className="flex items-center gap-1.5 text-sm px-4 py-2 bg-stone-700 hover:bg-stone-800 text-white rounded-lg transition-colors font-medium">
+        <button
+          type="button"
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-1.5 text-sm px-4 py-2 bg-stone-700 hover:bg-stone-800 text-white rounded-lg transition-colors font-medium"
+        >
           <IconPlus /> Tạo dự án
         </button>
       </div>
 
-      {/* Search */}
       <div className="relative mb-4">
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><IconSearch /></span>
         <input
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={event => setSearch(event.target.value)}
           placeholder="Tìm kiếm dự án..."
           className="w-full pl-10 pr-4 py-2.5 text-sm border-2 border-stone-200 focus:border-stone-500 rounded-xl outline-none"
         />
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-0 border-b border-gray-200 mb-6">
-        {tabs.map(t => (
+        {tabs.map(item => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            type="button"
+            key={item}
+            onClick={() => setTab(item)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${
-              tab === t ? 'border-stone-600 text-stone-800' : 'border-transparent text-gray-500 hover:text-gray-700'
+              tab === item ? 'border-stone-600 text-stone-800' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t}
+            {item}
           </button>
         ))}
       </div>
 
-      {/* Empty state */}
-      <div className="flex-1 bg-gray-50 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
-        <div className="relative mb-4">
-          <div className="w-16 h-16 rounded-2xl bg-gray-200 flex items-center justify-center">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-            </svg>
-          </div>
-          <span className="absolute -top-1 -right-1 text-base">✦</span>
+      {filteredProjects.length === 0 ? (
+        <div className="flex-1 bg-gray-50 rounded-2xl flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gray-200 flex items-center justify-center mb-4"><IconFolder /></div>
+          <p className="text-sm text-gray-500 max-w-sm mb-4">
+            {projects.length === 0
+              ? 'Tạo dự án để trò chuyện, quản lý ngữ cảnh và lưu lịch sử riêng cho từng mục tiêu.'
+              : 'Không tìm thấy dự án phù hợp với từ khóa.'}
+          </p>
+          {projects.length === 0 && (
+            <button type="button" onClick={() => setShowCreateModal(true)} className="flex items-center gap-1.5 text-sm text-stone-700 font-medium hover:text-stone-900">
+              <IconPlus /> Tạo dự án
+            </button>
+          )}
         </div>
-        <p className="text-sm text-gray-500 max-w-xs mb-4">
-          Tạo không gian lưu trữ cho từng mục tiêu giúp sắp xếp gọn gàng và kế thừa nội dung xuyên suốt
-        </p>
-        <button className="flex items-center gap-1.5 text-sm text-stone-700 font-medium hover:text-stone-900 transition-colors">
-          <IconPlus /> Tạo dự án
-        </button>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filteredProjects.map(project => {
+            const messageCount = project.conversations.reduce((total, conversation) => total + conversation.messages.length, 0)
+            return (
+              <button
+                type="button"
+                key={project.id}
+                onClick={() => setActiveProjectId(project.id)}
+                className="text-left rounded-2xl border border-gray-200 bg-white p-5 hover:border-stone-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-stone-100 text-stone-700 flex items-center justify-center"><IconFolder /></div>
+                  <span className="text-[11px] text-gray-400">{new Date(project.updatedAt).toLocaleDateString('vi-VN')}</span>
+                </div>
+                <h2 className="font-bold text-gray-900 mt-4 truncate">{project.name}</h2>
+                <p className="text-sm text-gray-500 mt-1 line-clamp-2 min-h-[40px]">{project.description || 'Chưa có mô tả dự án.'}</p>
+                <div className="flex items-center gap-3 mt-4 pt-3 border-t border-gray-100 text-[11px] text-gray-400">
+                  <span>{project.conversations.length} cuộc trò chuyện</span>
+                  <span>•</span>
+                  <span>{messageCount} tin nhắn</span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {showCreateModal && (
+        <CreateProjectModal
+          onClose={() => setShowCreateModal(false)}
+          onCreate={createProject}
+        />
+      )}
     </div>
   )
 }
@@ -4254,9 +4825,55 @@ export default function App() {
   const [showPromptLib, setShowPromptLib] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [notebookMode, setNotebookMode] = useState<NotebookMode>('doc')
+  const [creditBalance, setCreditBalance] = useState(loadCreditBalance)
+  const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>(loadCreditTransactions)
+  const creditBalanceRef = useRef(creditBalance)
   const [activeConversationId, setActiveConversationId] = useState(() => {
     return loadChatHistory()[0]?.id ?? createId()
   })
+
+  useEffect(() => {
+    localStorage.setItem(CREDIT_BALANCE_KEY, String(creditBalance))
+  }, [creditBalance])
+
+  useEffect(() => {
+    localStorage.setItem(CREDIT_TRANSACTIONS_KEY, JSON.stringify(creditTransactions))
+  }, [creditTransactions])
+
+  const spendCredits = (amount: number, description: string): number | null => {
+    if (amount <= 0 || creditBalanceRef.current < amount) return null
+
+    const nextBalance = creditBalanceRef.current - amount
+    creditBalanceRef.current = nextBalance
+    setCreditBalance(nextBalance)
+    const transaction: CreditTransaction = {
+      id: createId(),
+      type: 'usage',
+      amount,
+      description,
+      createdAt: new Date().toISOString(),
+      balanceAfter: nextBalance,
+    }
+    setCreditTransactions(current => [transaction, ...current].slice(0, 100))
+    return nextBalance
+  }
+
+  const addCredits = (amount: number, description: string) => {
+    if (!Number.isFinite(amount) || amount <= 0) return
+
+    const nextBalance = creditBalanceRef.current + Math.floor(amount)
+    creditBalanceRef.current = nextBalance
+    setCreditBalance(nextBalance)
+    const transaction: CreditTransaction = {
+      id: createId(),
+      type: 'topup',
+      amount: Math.floor(amount),
+      description,
+      createdAt: new Date().toISOString(),
+      balanceAfter: nextBalance,
+    }
+    setCreditTransactions(current => [transaction, ...current].slice(0, 100))
+  }
 
   const startNewConversation = () => {
     setActiveConversationId(createId())
@@ -4279,6 +4896,8 @@ export default function App() {
           setShowPromptLib={setShowPromptLib}
           conversationId={activeConversationId}
           onNewConversation={startNewConversation}
+          creditBalance={creditBalance}
+          onSpendCredits={spendCredits}
         />
       )
       case 'studio': return <StudioPage setPage={setPage} />
@@ -4286,9 +4905,21 @@ export default function App() {
       case 'studio-infographic': return <InfographicPage setPage={setPage} />
       case 'studio-slide': return <SlidePage setPage={setPage} />
       case 'notebook': return <NotebookPage setPage={setPage} onSelectMode={setNotebookMode} />
-      case 'notebook-workspace': return <NotebookWorkspace setPage={setPage} mode={notebookMode} />
+      case 'notebook-workspace': return (
+        <NotebookWorkspace
+          setPage={setPage}
+          mode={notebookMode}
+          creditBalance={creditBalance}
+          onSpendCredits={spendCredits}
+        />
+      )
       case 'assistant': return <AssistantPage />
-      case 'project': return <ProjectPage />
+      case 'project': return (
+        <ProjectPage
+          creditBalance={creditBalance}
+          onSpendCredits={spendCredits}
+        />
+      )
       case 'tools': return <ToolsPage />
       case 'meeting': return <MeetingPage />
       case 'history': return (
@@ -4303,6 +4934,8 @@ export default function App() {
           setShowPromptLib={setShowPromptLib}
           conversationId={activeConversationId}
           onNewConversation={startNewConversation}
+          creditBalance={creditBalance}
+          onSpendCredits={spendCredits}
         />
       )
     }
@@ -4312,7 +4945,12 @@ export default function App() {
     <div className="h-screen flex overflow-hidden bg-gray-50">
       <Sidebar page={page} setPage={p => { setShowAdmin(false); setPage(p) }} setShowPromptLib={setShowPromptLib} onAdmin={() => setShowAdmin(true)} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <TopBar setShowPromptLib={setShowPromptLib} setPage={setPage} />
+        <TopBar
+          setShowPromptLib={setShowPromptLib}
+          creditBalance={creditBalance}
+          creditTransactions={creditTransactions}
+          onAddCredit={addCredits}
+        />
         <main className="flex-1 flex min-h-0 overflow-hidden bg-white">
           {renderPage()}
         </main>
