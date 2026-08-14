@@ -188,7 +188,9 @@ function getDemoReply(question: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-
+  if (value.includes('about company') || value.includes('gioi thieu cong ty')) {
+    return 'GIỚI THIỆU VỀ THANHDANH 3D PRINTING Là một trong những công ty hàng đầu trong lĩnh vực in 3D, THANHDANH 3D PRINTING sẽ mang đến cho bạn sự hài lòng nhất với chuyên môn của chúng tôi. Một sự đổi mới, một góc độ hoàn toàn khác với in ấn ban đầu. Sáng tạo, nổi bật, phi thường là những gì bạn sẽ nhận được khi làm việc với chúng tôi.'
+  }
   if (value.includes('credit') || value.includes('so du')) {
     return 'Tài khoản demo của bạn hiện còn 500 Credit. Bạn có thể gửi yêu cầu nạp Credit từ nút Nạp Credit ở góc trên bên phải.'
   }
@@ -205,7 +207,7 @@ function getDemoReply(question: string): string {
     return 'Bạn có thể vào AI Studio để tạo hình ảnh, chỉnh sửa hình ảnh, xóa nền hoặc nâng chất lượng ảnh.'
   }
 
-  return 'Đây là phản hồi từ chế độ Demo. Hiện tại hệ thống chưa kết nối API AI. Bạn có thể hỏi về Credit, Notebook, AI Studio hoặc ghi chép cuộc họp.'
+  return 'DANAI là một nền tảng AI tích hợp nhiều công cụ hỗ trợ nghiên cứu, phân tích dữ liệu, tạo hình ảnh và ghi chép cuộc họp. Bạn có thể hỏi về các tính năng, cách sử dụng hoặc yêu cầu trợ giúp từ hệ thống.'
 }
 
 function formatFileSize(size: number): string {
