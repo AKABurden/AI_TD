@@ -147,6 +147,27 @@ type ChatConversation = {
   messages: ChatMessage[]
 }
 
+type NotebookMode = 'data' | 'doc'
+
+type NotebookSource = {
+  id: string
+  name: string
+  size: number
+  extension: string
+  addedAt: string
+}
+
+type NotebookAnalysis = {
+  sourceId: string
+  fileName: string
+  summary: string
+  extractionLevel: 'content' | 'metadata'
+  statistics: { label: string; value: string }[]
+  keywords: string[]
+  assessments: string[]
+  recommendations: string[]
+}
+
 const CHAT_HISTORY_KEY = 'danai-chat-history-v1'
 
 function createId() {
@@ -167,9 +188,6 @@ function getDemoReply(question: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-  if (value.includes('Gioi thieu') || value.includes('gioi thieu')) {
-    return 'Xin chào tôi là Trợ lý AI Thành Danh. Rất vui được giúp đỡ bạn'
-  }
 
   if (value.includes('credit') || value.includes('so du')) {
     return 'Tài khoản demo của bạn hiện còn 500 Credit. Bạn có thể gửi yêu cầu nạp Credit từ nút Nạp Credit ở góc trên bên phải.'
@@ -188,6 +206,122 @@ function getDemoReply(question: string): string {
   }
 
   return 'Đây là phản hồi từ chế độ Demo. Hiện tại hệ thống chưa kết nối API AI. Bạn có thể hỏi về Credit, Notebook, AI Studio hoặc ghi chép cuộc họp.'
+}
+
+function formatFileSize(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getFileExtension(fileName: string): string {
+  return fileName.split('.').pop()?.toLowerCase() || 'file'
+}
+
+function extractKeywords(words: string[]): string[] {
+  const stopWords = new Set([
+    'và', 'là', 'của', 'có', 'cho', 'trong', 'một', 'các', 'được', 'với', 'từ', 'này', 'đến', 'theo', 'khi', 'tại',
+    'the', 'and', 'for', 'that', 'this', 'with', 'from', 'are', 'was', 'were', 'have', 'has', 'not', 'but', 'you',
+  ])
+  const counts = new Map<string, number>()
+
+  words.forEach(word => {
+    const normalized = word.toLowerCase()
+    if (normalized.length < 3 || stopWords.has(normalized) || /^\d+$/.test(normalized)) return
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1)
+  })
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([word]) => word)
+}
+
+async function analyzeNotebookFile(file: File, sourceId: string): Promise<NotebookAnalysis> {
+  const extension = getFileExtension(file.name)
+  const textExtensions = new Set(['txt', 'md', 'csv', 'json', 'xml'])
+  const baseStatistics = [
+    { label: 'Định dạng', value: extension.toUpperCase() },
+    { label: 'Dung lượng', value: formatFileSize(file.size) },
+    { label: 'Cập nhật', value: new Date(file.lastModified).toLocaleDateString('vi-VN') },
+  ]
+
+  if (!textExtensions.has(extension)) {
+    return {
+      sourceId,
+      fileName: file.name,
+      extractionLevel: 'metadata',
+      summary: `Tài liệu ${file.name} đã được tiếp nhận thành công. Bản demo đã kiểm tra định dạng, dung lượng và khả năng đưa tài liệu vào bước trích xuất nội dung.`,
+      statistics: baseStatistics,
+      keywords: [],
+      assessments: [
+        'Tệp hợp lệ và đã sẵn sàng cho quy trình nghiên cứu tài liệu.',
+        extension === 'pdf'
+          ? 'Nếu PDF là bản scan, hệ thống thực tế cần OCR trước khi tóm tắt.'
+          : 'Định dạng này cần dịch vụ backend để trích xuất toàn bộ nội dung.',
+        'Chế độ demo hiện chỉ đánh giá metadata đối với PDF, Word, Excel và PowerPoint.',
+      ],
+      recommendations: [
+        'Kết nối API trích xuất nội dung hoặc AI Gateway để đọc toàn bộ tài liệu.',
+        'Bổ sung OCR cho tài liệu scan và kiểm tra bảng biểu/hình ảnh.',
+        'Sau khi trích xuất, thực hiện tóm tắt, nhận diện chủ đề và phát hiện điểm thiếu nhất quán.',
+      ],
+    }
+  }
+
+  const rawText = await file.text()
+  const compactText = rawText.replace(/\s+/g, ' ').trim()
+  const words = compactText.match(/[A-Za-zÀ-ỹ0-9]+/g) ?? []
+  const lines = rawText.split(/\r?\n/).filter(line => line.trim())
+  const sentences = compactText.split(/[.!?]+/).filter(sentence => sentence.trim())
+  const duplicateLines = lines.length - new Set(lines.map(line => line.trim().toLowerCase())).size
+  const keywords = extractKeywords(words)
+  const averageSentenceLength = sentences.length ? Math.round(words.length / sentences.length) : words.length
+  const summaryText = compactText.slice(0, 320)
+
+  const statistics = [
+    ...baseStatistics,
+    { label: 'Số từ', value: words.length.toLocaleString('vi-VN') },
+    { label: 'Số dòng', value: lines.length.toLocaleString('vi-VN') },
+    { label: 'Câu ước tính', value: sentences.length.toLocaleString('vi-VN') },
+  ]
+
+  if (extension === 'csv') {
+    const columnCount = lines[0]?.split(',').length ?? 0
+    statistics.push(
+      { label: 'Dòng dữ liệu', value: Math.max(lines.length - 1, 0).toLocaleString('vi-VN') },
+      { label: 'Số cột', value: columnCount.toLocaleString('vi-VN') },
+    )
+  }
+
+  const assessments = [
+    words.length >= 100
+      ? 'Tài liệu có đủ nội dung để thực hiện phân tích và tóm tắt cơ bản.'
+      : 'Nội dung khá ngắn; kết quả phân tích chỉ mang tính tham khảo.',
+    averageSentenceLength > 25
+      ? 'Một số câu có thể dài; nên chia nhỏ để tăng khả năng đọc hiểu.'
+      : 'Độ dài câu ở mức dễ đọc.',
+    duplicateLines > 0
+      ? `Phát hiện ${duplicateLines} dòng có khả năng bị lặp.`
+      : 'Chưa phát hiện dòng nội dung bị lặp hoàn toàn.',
+  ]
+
+  return {
+    sourceId,
+    fileName: file.name,
+    extractionLevel: 'content',
+    summary: summaryText
+      ? `Trích đoạn tổng quan: ${summaryText}${compactText.length > 320 ? '…' : ''}`
+      : 'Tài liệu không có nội dung văn bản để phân tích.',
+    statistics,
+    keywords,
+    assessments,
+    recommendations: [
+      'Kiểm tra lại các thông tin quan trọng trước khi sử dụng cho báo cáo chính thức.',
+      keywords.length ? `Có thể tiếp tục nghiên cứu theo các chủ đề: ${keywords.slice(0, 4).join(', ')}.` : 'Bổ sung nội dung chi tiết để nhận diện chủ đề tốt hơn.',
+      duplicateLines > 0 ? 'Rà soát và loại bỏ các dòng trùng trước khi tổng hợp.' : 'Có thể chuyển sang bước tóm tắt hoặc tạo báo cáo.',
+    ],
+  }
 }
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
@@ -1039,8 +1173,11 @@ function StudioPage({ setPage }: { setPage: (p: Page) => void }) {
 
 // ─── Page: Notebook Mode Select ──────────────────────────────────────────────
 
-function NotebookPage({ setPage }: { setPage: (p: Page) => void }) {
-  const [selected, setSelected] = useState<'data' | 'doc' | null>(null)
+function NotebookPage({ setPage, onSelectMode }: {
+  setPage: (p: Page) => void
+  onSelectMode: (mode: NotebookMode) => void
+}) {
+  const [selected, setSelected] = useState<NotebookMode | null>(null)
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 py-12">
@@ -1080,7 +1217,10 @@ function NotebookPage({ setPage }: { setPage: (p: Page) => void }) {
       </div>
       {selected && (
         <button
-          onClick={() => setPage('notebook-workspace')}
+          onClick={() => {
+            onSelectMode(selected)
+            setPage('notebook-workspace')
+          }}
           className="mt-8 px-8 py-2.5 bg-stone-700 hover:bg-stone-800 text-white font-medium rounded-xl transition-colors"
         >
           Tiếp tục →
@@ -1092,30 +1232,20 @@ function NotebookPage({ setPage }: { setPage: (p: Page) => void }) {
 
 // ─── Page: Notebook Workspace ────────────────────────────────────────────────
 
-function NotebookWorkspace({ setPage }: { setPage: (p: Page) => void }) {
+function NotebookWorkspace({ setPage, mode }: {
+  setPage: (p: Page) => void
+  mode: NotebookMode
+}) {
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-  try {
-    const saved = localStorage.getItem('danai-chat-messages')
-    return saved ? JSON.parse(saved) : []
-  } catch {
-    return []
-  }
-})
+  const [sources, setSources] = useState<NotebookSource[]>([])
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
+  const [analysis, setAnalysis] = useState<NotebookAnalysis | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const [questionResult, setQuestionResult] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const sourceFilesRef = useRef<Map<string, File>>(new Map())
 
-const [isReplying, setIsReplying] = useState(false)
-const bottomRef = useRef<HTMLDivElement | null>(null)
-
-useEffect(() => {
-  localStorage.setItem(
-    'danai-chat-messages',
-    JSON.stringify(messages)
-  )
-}, [messages])
-
-useEffect(() => {
-  bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-}, [messages.length, isReplying])
   const outputs = [
     { name: 'Mindmap', icon: '🗺️', soon: true },
     { name: 'Infographic', icon: '📊', soon: true },
@@ -1123,22 +1253,156 @@ useEffect(() => {
     { name: 'Biểu đồ', icon: '📈', soon: true },
   ]
 
+  const quickActions = mode === 'doc'
+    ? ['Tóm tắt tài liệu', 'Trích xuất ý chính', 'Đánh giá chất lượng', 'Đề xuất cải thiện', 'Tìm điểm chưa rõ']
+    : ['Lọc trùng', 'Trích xuất', 'Đối chiếu', 'Phân tích & tạo báo cáo', 'Tạo công thức Excel']
+
+  const runAnalysis = async (sourceId: string, file?: File) => {
+    const selectedFile = file ?? sourceFilesRef.current.get(sourceId)
+    if (!selectedFile) return
+
+    setActiveSourceId(sourceId)
+    setAnalysis(null)
+    setQuestionResult('')
+    setIsAnalyzing(true)
+    setUploadError('')
+
+    try {
+      const result = await analyzeNotebookFile(selectedFile, sourceId)
+      setAnalysis(result)
+    } catch {
+      setUploadError('Không thể đọc tài liệu này. Vui lòng thử lại với tệp khác.')
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList?.length) return
+
+    const allowedExtensions = new Set(['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xls', 'xlsx', 'ppt', 'pptx', 'json', 'xml'])
+    const maxFileSize = 20 * 1024 * 1024
+    const files = Array.from(fileList)
+    const validFiles = files.filter(file => allowedExtensions.has(getFileExtension(file.name)) && file.size <= maxFileSize)
+    const invalidFiles = files.filter(file => !allowedExtensions.has(getFileExtension(file.name)) || file.size > maxFileSize)
+
+    if (invalidFiles.length) {
+      setUploadError(`Không nhận ${invalidFiles.map(file => file.name).join(', ')}. Chỉ hỗ trợ tài liệu tối đa 20 MB.`)
+    } else {
+      setUploadError('')
+    }
+
+    if (!validFiles.length) return
+
+    const newSources = validFiles.map(file => {
+      const source: NotebookSource = {
+        id: createId(),
+        name: file.name,
+        size: file.size,
+        extension: getFileExtension(file.name),
+        addedAt: new Date().toISOString(),
+      }
+      sourceFilesRef.current.set(source.id, file)
+      return { source, file }
+    })
+
+    setSources(current => [...current, ...newSources.map(item => item.source)])
+    await runAnalysis(newSources[0].source.id, newSources[0].file)
+  }
+
+  const removeSource = (sourceId: string) => {
+    sourceFilesRef.current.delete(sourceId)
+    const remaining = sources.filter(source => source.id !== sourceId)
+    setSources(remaining)
+
+    if (activeSourceId === sourceId) {
+      const nextSource = remaining[0]
+      if (nextSource) {
+        void runAnalysis(nextSource.id)
+      } else {
+        setActiveSourceId(null)
+        setAnalysis(null)
+        setQuestionResult('')
+      }
+    }
+  }
+
+  const handleQuestion = () => {
+    const question = input.trim()
+    if (!question || !analysis) return
+
+    setQuestionResult(
+      `Dựa trên phân tích cơ bản của “${analysis.fileName}”: ${analysis.assessments[0]} ${
+        analysis.keywords.length ? `Các chủ đề nổi bật gồm ${analysis.keywords.slice(0, 4).join(', ')}.` : ''
+      } Câu hỏi của bạn là: “${question}”. Để trả lời theo toàn bộ nội dung PDF/Word, cần kết nối AI Gateway ở bước tiếp theo.`,
+    )
+    setInput('')
+  }
+
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        hidden
+        accept=".pdf,.doc,.docx,.txt,.md,.csv,.xls,.xlsx,.ppt,.pptx,.json,.xml"
+        onChange={event => {
+          void handleFiles(event.target.files)
+          event.currentTarget.value = ''
+        }}
+      />
+
       {/* Left: Sources panel */}
-      <div className="w-56 flex-shrink-0 border-r border-gray-100 flex flex-col bg-white">
+      <div className="w-64 flex-shrink-0 border-r border-gray-100 flex flex-col bg-white">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <span className="text-sm font-semibold text-gray-700">Nguồn tài liệu</span>
-          <button className="text-gray-400 hover:text-gray-600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
+          <span className="text-xs text-gray-400">{sources.length} nguồn</span>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center px-4 text-center">
-          <div className="text-4xl mb-3">📄</div>
-          <p className="text-sm text-gray-400">Nguồn tài liệu sẽ hiển thị tại đây</p>
+        <div className="flex-1 overflow-y-auto p-3">
+          {sources.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center px-4 text-center">
+              <div className="text-4xl mb-3">📄</div>
+              <p className="text-sm text-gray-400">Nguồn tài liệu sẽ hiển thị tại đây</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sources.map(source => (
+                <div
+                  key={source.id}
+                  className={`group flex items-start gap-2 rounded-xl border p-3 transition-colors ${
+                    activeSourceId === source.id ? 'border-stone-300 bg-stone-50' : 'border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <button type="button" onClick={() => void runAnalysis(source.id)} className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">📄</span>
+                      <p className="text-xs font-medium text-gray-800 truncate">{source.name}</p>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-1 ml-7">{source.extension.toUpperCase()} · {formatFileSize(source.size)}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSource(source.id)}
+                    aria-label={`Xóa ${source.name}`}
+                    className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                  >
+                    <IconX />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="p-3 border-t border-gray-100">
-          <button className="w-full flex items-center justify-center gap-2 text-sm text-stone-800 border border-stone-300 rounded-lg py-2 hover:bg-stone-50 transition-colors">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full flex items-center justify-center gap-2 text-sm text-stone-800 border border-stone-300 rounded-lg py-2 hover:bg-stone-50 transition-colors"
+          >
             <IconPlus /> Thêm tài liệu
           </button>
+          <p className="text-[10px] text-gray-400 text-center mt-2">PDF, Word, Excel, TXT · tối đa 20 MB</p>
         </div>
       </div>
 
@@ -1148,29 +1412,136 @@ useEffect(() => {
         <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-100 text-sm text-gray-500">
           <button onClick={() => setPage('notebook')} className="hover:text-stone-800 transition-colors">Notebook</button>
           <span>/</span>
-          <span>Phân tích dữ liệu</span>
+          <span>{mode === 'doc' ? 'Nghiên cứu tài liệu' : 'Phân tích dữ liệu'}</span>
           <span>/</span>
-          <span className="text-gray-900 font-medium">Số dữ liệu mới</span>
+          <span className="text-gray-900 font-medium">Notebook mới</span>
           <button className="text-gray-400 hover:text-gray-600 ml-1">✏️</button>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center px-6">
-          <div className="text-center mb-6">
-            <div className="text-3xl mb-2">👋</div>
-            <h2 className="text-xl font-bold text-gray-900">Chào Thành Danh</h2>
-          </div>
-          <div className="flex gap-2 flex-wrap justify-center mb-4">
-            {['Lọc trùng', 'Trích xuất', 'Đổi chiều', 'Phân tích & tạo báo cáo', 'Tạo công thức excel'].map(a => (
-              <button key={a} className="text-xs px-3 py-1.5 border border-gray-200 rounded-full text-gray-600 hover:border-stone-300 hover:text-stone-800 transition-colors flex items-center gap-1">
-                {a === 'Lọc trùng' && '🔽'}
-                {a === 'Trích xuất' && '📤'}
-                {a === 'Đổi chiều' && '↔️'}
-                {a === 'Phân tích & tạo báo cáo' && '📋'}
-                {a === 'Tạo công thức excel' && '📗'}
-                {a}
+        <div className="flex-1 overflow-y-auto px-6 py-6 bg-gray-50/40">
+          {uploadError && (
+            <div className="max-w-3xl mx-auto mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {uploadError}
+            </div>
+          )}
+
+          {sources.length === 0 && !isAnalyzing && (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-stone-100 flex items-center justify-center text-3xl mb-4">📚</div>
+              <h2 className="text-xl font-bold text-gray-900">Nghiên cứu tài liệu</h2>
+              <p className="text-sm text-gray-500 mt-2 max-w-md">
+                Đính kèm tài liệu để DANAI kiểm tra định dạng, thống kê nội dung và đưa ra đánh giá cơ bản.
+              </p>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium transition-colors"
+              >
+                <IconUpload /> Chọn tài liệu
               </button>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {isAnalyzing && (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <div className="w-10 h-10 rounded-full border-4 border-stone-200 border-t-stone-700 animate-spin mb-4" />
+              <h2 className="text-base font-semibold text-gray-800">Đang phân tích tài liệu...</h2>
+              <p className="text-sm text-gray-400 mt-1">DANAI đang kiểm tra cấu trúc và chất lượng nội dung.</p>
+            </div>
+          )}
+
+          {analysis && !isAnalyzing && (
+            <div className="w-full max-w-3xl mx-auto space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {quickActions.map(action => (
+                  <button
+                    type="button"
+                    key={action}
+                    onClick={() => setInput(action)}
+                    className="text-xs px-3 py-1.5 border border-gray-200 bg-white rounded-full text-gray-600 hover:border-stone-300 hover:text-stone-800 transition-colors"
+                  >
+                    {action}
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-4 mb-5">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">📄</span>
+                      <h2 className="font-bold text-gray-900 break-all">{analysis.fileName}</h2>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1 ml-7">
+                      {analysis.extractionLevel === 'content' ? 'Đã đọc nội dung văn bản' : 'Đánh giá metadata trong chế độ demo'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => activeSourceId && void runAnalysis(activeSourceId)}
+                    className="text-xs px-3 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  >
+                    Phân tích lại
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+                  {analysis.statistics.map(statistic => (
+                    <div key={statistic.label} className="rounded-xl bg-gray-50 border border-gray-100 p-3">
+                      <p className="text-[11px] text-gray-400">{statistic.label}</p>
+                      <p className="text-sm font-semibold text-gray-800 mt-1">{statistic.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-5">
+                  <section>
+                    <h3 className="text-sm font-semibold text-gray-800 mb-2">Tổng quan</h3>
+                    <p className="text-sm leading-6 text-gray-600 bg-stone-50/60 rounded-xl p-4">{analysis.summary}</p>
+                  </section>
+
+                  {analysis.keywords.length > 0 && (
+                    <section>
+                      <h3 className="text-sm font-semibold text-gray-800 mb-2">Từ khóa nổi bật</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {analysis.keywords.map(keyword => (
+                          <span key={keyword} className="text-xs px-2.5 py-1 rounded-full bg-stone-100 text-stone-700">{keyword}</span>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  <section>
+                    <h3 className="text-sm font-semibold text-gray-800 mb-2">Đánh giá cơ bản</h3>
+                    <div className="space-y-2">
+                      {analysis.assessments.map((assessment, index) => (
+                        <div key={index} className="flex items-start gap-2 text-sm text-gray-600">
+                          <span className="text-green-500 mt-0.5">✓</span>
+                          <span>{assessment}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section>
+                    <h3 className="text-sm font-semibold text-gray-800 mb-2">Đề xuất tiếp theo</h3>
+                    <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4 space-y-2">
+                      {analysis.recommendations.map((recommendation, index) => (
+                        <p key={index} className="text-sm text-gray-600">{index + 1}. {recommendation}</p>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              </div>
+
+              {questionResult && (
+                <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-2">DANAI trả lời</h3>
+                  <p className="text-sm leading-6 text-gray-600">{questionResult}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Input */}
@@ -1179,18 +1550,26 @@ useEffect(() => {
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  handleQuestion()
+                }
+              }}
               placeholder="Hỏi tôi bất cứ điều gì"
               className="w-full text-sm text-gray-800 placeholder-gray-400 resize-none outline-none min-h-[40px]"
               rows={2}
             />
             <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-gray-400">Đang dùng 0 nguồn</span>
+              <span className="text-xs text-gray-400">Đang dùng {sources.length} nguồn</span>
               <div className="flex items-center gap-2">
                 <button className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 flex items-center gap-1">
                   <span>🤖</span> GPT 5.4 ▾
                 </button>
-                <button className="text-gray-400 hover:text-gray-600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></button>
-                <button disabled={!input.trim()} className="w-7 h-7 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center transition-colors">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-gray-600" aria-label="Đính kèm tài liệu">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <button type="button" onClick={handleQuestion} disabled={!input.trim() || !analysis} className="w-7 h-7 rounded-full bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white flex items-center justify-center transition-colors">
                   <IconSend />
                 </button>
               </div>
@@ -1217,8 +1596,10 @@ useEffect(() => {
           ))}
         </div>
         <div className="flex-1 flex flex-col items-center justify-center px-4 text-center">
-          <div className="text-3xl mb-2">📄</div>
-          <p className="text-xs text-gray-400">Sản phẩm đầu ra sẽ được tạo tại đây</p>
+          <div className="text-3xl mb-2">{analysis ? '✅' : '📄'}</div>
+          <p className={`text-xs ${analysis ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
+            {analysis ? 'Đã tạo kết quả phân tích cơ bản' : 'Sản phẩm đầu ra sẽ được tạo tại đây'}
+          </p>
         </div>
       </div>
     </div>
@@ -3870,6 +4251,7 @@ export default function App() {
   const [page, setPage] = useState<Page>('chat')
   const [showPromptLib, setShowPromptLib] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+  const [notebookMode, setNotebookMode] = useState<NotebookMode>('doc')
   const [activeConversationId, setActiveConversationId] = useState(() => {
     return loadChatHistory()[0]?.id ?? createId()
   })
@@ -3901,8 +4283,8 @@ export default function App() {
       case 'studio-chart': return <ChartPage setPage={setPage} />
       case 'studio-infographic': return <InfographicPage setPage={setPage} />
       case 'studio-slide': return <SlidePage setPage={setPage} />
-      case 'notebook': return <NotebookPage setPage={setPage} />
-      case 'notebook-workspace': return <NotebookWorkspace setPage={setPage} />
+      case 'notebook': return <NotebookPage setPage={setPage} onSelectMode={setNotebookMode} />
+      case 'notebook-workspace': return <NotebookWorkspace setPage={setPage} mode={notebookMode} />
       case 'assistant': return <AssistantPage />
       case 'project': return <ProjectPage />
       case 'tools': return <ToolsPage />
