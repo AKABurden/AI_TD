@@ -167,6 +167,9 @@ function getDemoReply(question: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+  if (value.includes('Gioi thieu') || value.includes('gioi thieu')) {
+    return 'Xin chào tôi là Trợ lý AI Thành Danh. Rất vui được giúp đỡ bạn'
+  }
 
   if (value.includes('credit') || value.includes('so du')) {
     return 'Tài khoản demo của bạn hiện còn 500 Credit. Bạn có thể gửi yêu cầu nạp Credit từ nút Nạp Credit ở góc trên bên phải.'
