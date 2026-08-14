@@ -653,16 +653,20 @@ function ModelSelector({ selected, onSelect }: { selected: string; onSelect: (id
 
 // ─── Page: Chat ─────────────────────────────────────────────────────────────
 
-function ChatPage({ setShowPromptLib }: { setShowPromptLib: (v: boolean) => void }) {
+function ChatPage({ setShowPromptLib, conversationId, onNewConversation }: {
+  setShowPromptLib: (v: boolean) => void
+  conversationId: string
+  onNewConversation: () => void
+}) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('auto')
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const history = loadChatHistory()
-    return history[0]?.messages ?? []
+    return history.find(item => item.id === conversationId)?.messages ?? []
   })
-  const [conversationId] = useState(() => loadChatHistory()[0]?.id ?? createId())
   const [isReplying, setIsReplying] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const replyTimerRef = useRef<number | null>(null)
 
   const chips = [
     { icon: '🖼️', label: 'Tạo hình ảnh' },
@@ -707,9 +711,17 @@ function ChatPage({ setShowPromptLib }: { setShowPromptLib: (v: boolean) => void
       JSON.stringify([
         conversation,
         ...oldHistory.filter(item => item.id !== conversationId),
-      ].slice(0, 30)),
+      ]),
     )
   }, [conversationId, messages])
+
+  useEffect(() => {
+    return () => {
+      if (replyTimerRef.current !== null) {
+        window.clearTimeout(replyTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleSend = () => {
     const question = input.trim()
@@ -727,7 +739,7 @@ function ChatPage({ setShowPromptLib }: { setShowPromptLib: (v: boolean) => void
     setInput('')
     setIsReplying(true)
 
-    window.setTimeout(() => {
+    replyTimerRef.current = window.setTimeout(() => {
       const assistantMessage: ChatMessage = {
         id: createId(),
         role: 'assistant',
@@ -738,6 +750,7 @@ function ChatPage({ setShowPromptLib }: { setShowPromptLib: (v: boolean) => void
 
       setMessages(current => [...current, assistantMessage])
       setIsReplying(false)
+      replyTimerRef.current = null
     }, 600)
   }
 
@@ -831,6 +844,23 @@ function ChatPage({ setShowPromptLib }: { setShowPromptLib: (v: boolean) => void
         </div>
       ) : (
         <>
+          <div className="border-b border-gray-100 bg-white px-6 py-3">
+            <div className="w-full max-w-3xl mx-auto flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Cuộc trò chuyện</p>
+                <p className="text-xs text-gray-400">Tin nhắn được lưu tự động vào Lịch sử</p>
+              </div>
+              <button
+                type="button"
+                onClick={onNewConversation}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-stone-700 hover:bg-stone-800 text-white text-xs font-medium transition-colors"
+              >
+                <IconPlus />
+                Cuộc trò chuyện mới
+              </button>
+            </div>
+          </div>
+
           <div className="flex-1 overflow-y-auto px-6 py-8">
             <div className="w-full max-w-3xl mx-auto space-y-5">
               {messages.map(message => (
@@ -3737,14 +3767,96 @@ function SlidePage({ setPage }: { setPage: (p: Page) => void }) {
   )
 }
 
-// ─── Generic placeholder page ─────────────────────────────────────────────────
+// ─── Page: Chat history ──────────────────────────────────────────────────────
 
-function PlaceholderPage({ title, icon }: { title: string; icon: string }) {
+function HistoryPage({ onOpenConversation, onNewConversation }: {
+  onOpenConversation: (conversationId: string) => void
+  onNewConversation: () => void
+}) {
+  const [history] = useState<ChatConversation[]>(() => loadChatHistory())
+
+  const formatDate = (value: string) => {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+
+    return new Intl.DateTimeFormat('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(date)
+  }
+
+  if (history.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+        <div className="w-14 h-14 rounded-2xl bg-stone-100 text-stone-600 flex items-center justify-center mb-4">
+          <IconHistory />
+        </div>
+        <h2 className="text-lg font-bold text-gray-800">Chưa có lịch sử trò chuyện</h2>
+        <p className="text-sm text-gray-400 mt-2 mb-5">Hãy bắt đầu một cuộc trò chuyện mới với DANAI.</p>
+        <button
+          type="button"
+          onClick={onNewConversation}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium transition-colors"
+        >
+          <IconPlus />
+          Cuộc trò chuyện mới
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex-1 flex flex-col items-center justify-center text-center">
-      <div className="text-5xl mb-4">{icon}</div>
-      <h2 className="text-xl font-bold text-gray-700">{title}</h2>
-      <p className="text-sm text-gray-400 mt-2">Tính năng đang được phát triển</p>
+    <div className="flex-1 overflow-y-auto bg-gray-50 px-6 py-8">
+      <div className="w-full max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Lịch sử trò chuyện</h1>
+            <p className="text-sm text-gray-400 mt-1">Chọn một cuộc trò chuyện để xem và tiếp tục.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onNewConversation}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium transition-colors"
+          >
+            <IconPlus />
+            Cuộc trò chuyện mới
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {history.map(conversation => {
+            const lastMessage = conversation.messages[conversation.messages.length - 1]
+
+            return (
+              <button
+                type="button"
+                key={conversation.id}
+                onClick={() => onOpenConversation(conversation.id)}
+                className="w-full text-left bg-white border border-gray-200 hover:border-stone-300 hover:shadow-sm rounded-xl px-5 py-4 transition-all"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-stone-600"><IconChat /></span>
+                      <h2 className="text-sm font-semibold text-gray-900 truncate">{conversation.title}</h2>
+                    </div>
+                    <p className="text-sm text-gray-500 truncate">
+                      {lastMessage?.content ?? 'Chưa có nội dung'}
+                    </p>
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-xs text-gray-400">{formatDate(conversation.updatedAt)}</p>
+                    <p className="text-[11px] text-gray-400 mt-1">{conversation.messages.length} tin nhắn</p>
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -3755,11 +3867,33 @@ export default function App() {
   const [page, setPage] = useState<Page>('chat')
   const [showPromptLib, setShowPromptLib] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+  const [activeConversationId, setActiveConversationId] = useState(() => {
+    return loadChatHistory()[0]?.id ?? createId()
+  })
+
+  const startNewConversation = () => {
+    setActiveConversationId(createId())
+    setShowAdmin(false)
+    setPage('chat')
+  }
+
+  const openConversation = (conversationId: string) => {
+    setActiveConversationId(conversationId)
+    setShowAdmin(false)
+    setPage('chat')
+  }
 
   const renderPage = () => {
     if (showAdmin) return <AdminPage onBack={() => setShowAdmin(false)} />
     switch (page) {
-      case 'chat': return <ChatPage setShowPromptLib={setShowPromptLib} />
+      case 'chat': return (
+        <ChatPage
+          key={activeConversationId}
+          setShowPromptLib={setShowPromptLib}
+          conversationId={activeConversationId}
+          onNewConversation={startNewConversation}
+        />
+      )
       case 'studio': return <StudioPage setPage={setPage} />
       case 'studio-chart': return <ChartPage setPage={setPage} />
       case 'studio-infographic': return <InfographicPage setPage={setPage} />
@@ -3770,8 +3904,20 @@ export default function App() {
       case 'project': return <ProjectPage />
       case 'tools': return <ToolsPage />
       case 'meeting': return <MeetingPage />
-      case 'history': return <PlaceholderPage title="Lịch sử" icon="🕐" />
-      default: return <ChatPage setShowPromptLib={setShowPromptLib} />
+      case 'history': return (
+        <HistoryPage
+          onOpenConversation={openConversation}
+          onNewConversation={startNewConversation}
+        />
+      )
+      default: return (
+        <ChatPage
+          key={activeConversationId}
+          setShowPromptLib={setShowPromptLib}
+          conversationId={activeConversationId}
+          onNewConversation={startNewConversation}
+        />
+      )
     }
   }
 
