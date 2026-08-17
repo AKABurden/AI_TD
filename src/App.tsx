@@ -1,7 +1,7 @@
 // Bản DANAI đã nối khung chat với phản hồi demo và localStorage.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import logoThanhDanh from './imports/logoThanhDanh.png'
- 
+
 // ─── Icons (inline SVG) ─────────────────────────────────────────────────────
 
 const IconChat = () => (
@@ -177,6 +177,22 @@ type CreditTransaction = {
   balanceAfter: number
 }
 
+type CreditRequestStatus = 'pending' | 'approved' | 'rejected'
+
+type CreditRequest = {
+  id: string
+  userId: string
+  userName: string
+  userEmail: string
+  amount: number
+  reason: string
+  status: CreditRequestStatus
+  createdAt: string
+  reviewedAt?: string
+  rejectionReason?: string
+  notificationRead: boolean
+}
+
 type ProjectData = {
   id: string
   name: string
@@ -190,7 +206,13 @@ const CHAT_HISTORY_KEY = 'danai-chat-history-v1'
 const PROJECTS_STORAGE_KEY = 'danai-projects-v1'
 const CREDIT_BALANCE_KEY = 'danai-credit-balance-v1'
 const CREDIT_TRANSACTIONS_KEY = 'danai-credit-transactions-v1'
+const CREDIT_REQUESTS_KEY = 'danai-credit-requests-v1'
 const DEFAULT_CREDIT_BALANCE = 500
+const DEMO_USER = {
+  id: 'demo-user-001',
+  name: 'Thành Danh',
+  email: 'thanhdanh@danai.vn',
+}
 
 function createId() {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
@@ -218,6 +240,16 @@ function loadCreditBalance(): number {
 function loadCreditTransactions(): CreditTransaction[] {
   try {
     const saved = localStorage.getItem(CREDIT_TRANSACTIONS_KEY)
+    const parsed = saved ? JSON.parse(saved) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function loadCreditRequests(): CreditRequest[] {
+  try {
+    const saved = localStorage.getItem(CREDIT_REQUESTS_KEY)
     const parsed = saved ? JSON.parse(saved) : []
     return Array.isArray(parsed) ? parsed : []
   } catch {
@@ -482,9 +514,9 @@ const creditLevels = [
   { value: 10000, label: '10.000 Credit', price: '800.000 đ', popular: false },
 ]
 
-function NapCreditModal({ onClose, onAddCredit }: {
+function NapCreditModal({ onClose, onSubmitCreditRequest }: {
   onClose: () => void
-  onAddCredit: (amount: number, description: string) => void
+  onSubmitCreditRequest: (amount: number, reason: string) => void
 }) {
   const [selected, setSelected] = useState(1000)
   const [reason, setReason] = useState('')
@@ -495,8 +527,11 @@ function NapCreditModal({ onClose, onAddCredit }: {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center text-3xl mb-4">✅</div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">Nạp Credit thành công!</h2>
-          <p className="text-sm text-gray-500 mb-6">Đã cộng {selected.toLocaleString('vi-VN')} Credit vào tài khoản demo của bạn.</p>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Đã gửi yêu cầu!</h2>
+          <p className="text-sm text-gray-500 mb-2">
+            Yêu cầu tăng {selected.toLocaleString('vi-VN')} Credit đã được chuyển tới quản trị viên.
+          </p>
+          <p className="text-xs text-gray-400 mb-6">Bạn sẽ nhận được thông báo sau khi yêu cầu được duyệt hoặc từ chối.</p>
           <button onClick={onClose} className="px-8 py-2.5 bg-stone-700 hover:bg-stone-800 text-white rounded-xl text-sm font-medium transition-colors">
             Đóng
           </button>
@@ -511,8 +546,8 @@ function NapCreditModal({ onClose, onAddCredit }: {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Nạp Credit</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Chọn số Credit cần cộng vào tài khoản demo</p>
+            <h2 className="text-lg font-bold text-gray-900">Yêu cầu tăng Credit</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Gửi yêu cầu để quản trị viên xem xét và phê duyệt</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><IconX /></button>
         </div>
@@ -556,12 +591,12 @@ function NapCreditModal({ onClose, onAddCredit }: {
           {/* Reason input */}
           <div>
             <label className="text-sm font-semibold text-gray-700 mb-2 block">
-              Ghi chú <span className="text-gray-400 font-normal">(không bắt buộc)</span>
+              Lý do yêu cầu <span className="text-red-400">*</span>
             </label>
             <textarea
               value={reason}
               onChange={e => setReason(e.target.value)}
-              placeholder="Ví dụ: bổ sung Credit để thử nghiệm Notebook"
+              placeholder="Ví dụ: Cần bổ sung Credit để xử lý tài liệu trong Notebook"
               rows={3}
               maxLength={300}
               className="w-full px-4 py-3 text-sm border-2 border-gray-200 focus:border-stone-400 rounded-xl outline-none resize-none placeholder-gray-400 transition-colors"
@@ -587,12 +622,13 @@ function NapCreditModal({ onClose, onAddCredit }: {
           </button>
           <button
             onClick={() => {
-              onAddCredit(selected, reason.trim() || 'Nạp Credit từ tài khoản người dùng')
+              onSubmitCreditRequest(selected, reason.trim())
               setSubmitted(true)
             }}
-            className="px-6 py-2 bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium rounded-lg transition-colors"
+            disabled={!reason.trim()}
+            className="px-6 py-2 bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
           >
-            Xác nhận nạp
+            Gửi yêu cầu
           </button>
         </div>
       </div>
@@ -600,15 +636,28 @@ function NapCreditModal({ onClose, onAddCredit }: {
   )
 }
 
-function TopBar({ setShowPromptLib, creditBalance, creditTransactions, onAddCredit }: {
+function TopBar({
+  setShowPromptLib,
+  creditBalance,
+  creditTransactions,
+  creditRequests,
+  onSubmitCreditRequest,
+  onMarkNotificationsRead,
+}: {
   setShowPromptLib: (v: boolean) => void
   creditBalance: number
   creditTransactions: CreditTransaction[]
-  onAddCredit: (amount: number, description: string) => void
+  creditRequests: CreditRequest[]
+  onSubmitCreditRequest: (amount: number, reason: string) => void
+  onMarkNotificationsRead: () => void
 }) {
   const [showCreditPopup, setShowCreditPopup] = useState(false)
   const [showNapModal, setShowNapModal] = useState(false)
   const [showCreditHistory, setShowCreditHistory] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
+  const pendingRequestCount = creditRequests.filter(request => request.status === 'pending').length
+  const notifications = creditRequests.filter(request => request.status !== 'pending')
+  const unreadNotificationCount = notifications.filter(request => !request.notificationRead).length
 
   return (
     <>
@@ -703,13 +752,89 @@ function TopBar({ setShowPromptLib, creditBalance, creditTransactions, onAddCred
           onClick={() => setShowNapModal(true)}
           className="bg-stone-700 hover:bg-stone-800 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
         >
-          Nạp Credit
+          {pendingRequestCount > 0 ? `Đang chờ duyệt (${pendingRequestCount})` : 'Nạp Credit'}
         </button>
 
         <div className="flex items-center gap-1 ml-1">
-          <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
-            <IconBell />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowNotifications(value => !value)}
+              className="relative w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+              aria-label="Thông báo"
+            >
+              <IconBell />
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -right-1 -top-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                </span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowNotifications(false)} />
+                <div className="absolute right-0 top-full mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-gray-100 z-20 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">Thông báo</p>
+                      <p className="text-[11px] text-gray-400">Kết quả xử lý yêu cầu Credit</p>
+                    </div>
+                    {unreadNotificationCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={onMarkNotificationsRead}
+                        className="text-xs text-stone-700 hover:underline"
+                      >
+                        Đánh dấu đã đọc
+                      </button>
+                    )}
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-10 text-center">
+                      <div className="text-3xl mb-2">🔔</div>
+                      <p className="text-sm text-gray-500">Chưa có thông báo mới.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
+                      {notifications.slice(0, 20).map(request => {
+                        const approved = request.status === 'approved'
+                        return (
+                          <div
+                            key={request.id}
+                            className={`px-4 py-3 flex items-start gap-3 ${request.notificationRead ? 'bg-white' : 'bg-amber-50/60'}`}
+                          >
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${approved ? 'bg-green-100' : 'bg-red-100'}`}>
+                              {approved ? '✅' : '❌'}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className={`text-sm font-bold ${approved ? 'text-green-700' : 'text-red-600'}`}>
+                                  {approved ? 'Đã duyệt' : 'Đã từ chối'}
+                                </p>
+                                <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                                  {new Date(request.reviewedAt ?? request.createdAt).toLocaleString('vi-VN')}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                                Yêu cầu tăng {request.amount.toLocaleString('vi-VN')} Credit {approved ? 'đã được duyệt.' : 'đã bị từ chối.'}
+                              </p>
+                              {!approved && request.rejectionReason && (
+                                <p className="text-xs text-red-600 mt-1 leading-relaxed">
+                                  Lý do: {request.rejectionReason}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </button>
@@ -723,7 +848,7 @@ function TopBar({ setShowPromptLib, creditBalance, creditTransactions, onAddCred
       {showNapModal && (
         <NapCreditModal
           onClose={() => setShowNapModal(false)}
-          onAddCredit={onAddCredit}
+          onSubmitCreditRequest={onSubmitCreditRequest}
         />
       )}
     </>
@@ -4115,13 +4240,245 @@ function AdminUsers() {
     </div>
   )
 }
+// ─── Admin: Duyệt yêu cầu Credit ─────────────────────────────────────────────
+
+function AdminCreditRequests({ requests, onApprove, onReject }: {
+  requests: CreditRequest[]
+  onApprove: (requestId: string) => void
+  onReject: (requestId: string, reason: string) => void
+}) {
+  const [filter, setFilter] = useState<'all' | CreditRequestStatus>('pending')
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectionReason, setRejectionReason] = useState('')
+  const [feedback, setFeedback] = useState('')
+
+  const counts = {
+    all: requests.length,
+    pending: requests.filter(request => request.status === 'pending').length,
+    approved: requests.filter(request => request.status === 'approved').length,
+    rejected: requests.filter(request => request.status === 'rejected').length,
+  }
+
+  const filteredRequests = [...requests]
+    .filter(request => filter === 'all' || request.status === filter)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  const handleApprove = (request: CreditRequest) => {
+    onApprove(request.id)
+    setRejectingId(null)
+    setRejectionReason('')
+    setFeedback(`Đã duyệt yêu cầu tăng ${request.amount.toLocaleString('vi-VN')} Credit của ${request.userName}.`)
+  }
+
+  const handleOpenReject = (requestId: string) => {
+    setRejectingId(requestId)
+    setRejectionReason('')
+    setFeedback('')
+  }
+
+  const handleSendRejection = (request: CreditRequest) => {
+    const reason = rejectionReason.trim()
+    if (!reason) return
+    onReject(request.id, reason)
+    setRejectingId(null)
+    setRejectionReason('')
+    setFeedback(`Đã gửi lý do từ chối tới ${request.userName}.`)
+  }
+
+  const statusMeta: Record<CreditRequestStatus, { label: string; className: string }> = {
+    pending: { label: 'Chờ duyệt', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+    approved: { label: 'Đã duyệt', className: 'bg-green-50 text-green-700 border-green-200' },
+    rejected: { label: 'Đã từ chối', className: 'bg-red-50 text-red-600 border-red-200' },
+  }
+
+  const tabs = [
+    { id: 'pending', label: 'Chờ duyệt', count: counts.pending },
+    { id: 'approved', label: 'Đã duyệt', count: counts.approved },
+    { id: 'rejected', label: 'Đã từ chối', count: counts.rejected },
+    { id: 'all', label: 'Tất cả', count: counts.all },
+  ] as const
+
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-5 bg-gray-50/40">
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Duyệt yêu cầu Credit</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Phê duyệt yêu cầu tăng Credit hoặc gửi lý do từ chối cho người yêu cầu.
+          </p>
+        </div>
+        <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-right">
+          <p className="text-[10px] uppercase tracking-wide text-amber-600 font-semibold">Đang chờ xử lý</p>
+          <p className="text-xl font-bold text-amber-700">{counts.pending}</p>
+        </div>
+      </div>
+
+      {feedback && (
+        <div className="mb-4 px-4 py-3 bg-green-50 border border-green-200 text-green-700 rounded-xl text-sm flex items-center justify-between gap-3">
+          <span>✅ {feedback}</span>
+          <button type="button" onClick={() => setFeedback('')} className="text-green-600 hover:text-green-800">
+            <IconX />
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        <div className="flex items-center gap-1 px-4 pt-4 border-b border-gray-100 overflow-x-auto">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                setFilter(tab.id)
+                setRejectingId(null)
+                setRejectionReason('')
+              }}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                filter === tab.id
+                  ? 'border-stone-700 text-stone-800'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              {tab.label}
+              <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${filter === tab.id ? 'bg-stone-100 text-stone-700' : 'bg-gray-100 text-gray-500'}`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {filteredRequests.length === 0 ? (
+          <div className="py-16 text-center">
+            <div className="text-4xl mb-3">📥</div>
+            <p className="text-sm font-medium text-gray-600">Không có yêu cầu trong trạng thái này.</p>
+            <p className="text-xs text-gray-400 mt-1">Yêu cầu mới từ người dùng sẽ hiển thị tại đây.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filteredRequests.map(request => {
+              const meta = statusMeta[request.status]
+              const isRejecting = rejectingId === request.id
+              return (
+                <div key={request.id} className="p-5">
+                  <div className="flex items-start justify-between gap-5">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-stone-600 to-amber-700 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+                        TD
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-gray-900">{request.userName}</p>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${meta.className}`}>
+                            {meta.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">{request.userEmail}</p>
+                        <div className="flex items-center gap-4 mt-3 flex-wrap">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-gray-400">Số Credit yêu cầu</p>
+                            <p className="text-base font-bold text-stone-800 mt-0.5">⚡ {request.amount.toLocaleString('vi-VN')} Credit</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-gray-400">Thời gian gửi</p>
+                            <p className="text-xs font-medium text-gray-600 mt-1">{new Date(request.createdAt).toLocaleString('vi-VN')}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 bg-gray-50 rounded-xl px-3 py-2.5 max-w-2xl">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Lý do yêu cầu</p>
+                          <p className="text-sm text-gray-700 leading-relaxed">{request.reason}</p>
+                        </div>
+                        {request.status === 'rejected' && request.rejectionReason && (
+                          <div className="mt-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5 max-w-2xl">
+                            <p className="text-[10px] uppercase tracking-wide text-red-500 font-semibold mb-1">Lý do từ chối đã gửi</p>
+                            <p className="text-sm text-red-700 leading-relaxed">{request.rejectionReason}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {request.status === 'pending' && (
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReject(request.id)}
+                          className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                        >
+                          Từ chối
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(request)}
+                          className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                        >
+                          Duyệt
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {isRejecting && request.status === 'pending' && (
+                    <div className="mt-4 ml-12 p-4 bg-red-50/70 border border-red-200 rounded-xl">
+                      <label className="text-sm font-semibold text-red-700 block mb-2">
+                        Nhập lý do từ chối <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        autoFocus
+                        value={rejectionReason}
+                        onChange={event => setRejectionReason(event.target.value)}
+                        maxLength={500}
+                        rows={3}
+                        placeholder="Ví dụ: Yêu cầu chưa nêu rõ mục đích sử dụng Credit..."
+                        className="w-full px-3 py-2.5 text-sm bg-white border border-red-200 focus:border-red-400 rounded-lg outline-none resize-none placeholder-gray-400"
+                      />
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[10px] text-gray-400">{rejectionReason.length}/500 ký tự</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRejectingId(null)
+                              setRejectionReason('')
+                            }}
+                            className="px-4 py-2 text-sm text-gray-600 border border-gray-200 bg-white rounded-lg hover:bg-gray-50"
+                          >
+                            Hủy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSendRejection(request)}
+                            disabled={!rejectionReason.trim()}
+                            className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed rounded-lg"
+                          >
+                            Gửi lý do từ chối
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Admin Shell ──────────────────────────────────────────────────────────────
 
-function AdminPage({ onBack }: { onBack: () => void }) {
-  const [adminPage, setAdminPage] = useState<'baocao' | 'dinhmuc' | 'phanquyen' | 'users'>('baocao')
+function AdminPage({ onBack, creditRequests, onApproveCreditRequest, onRejectCreditRequest }: {
+  onBack: () => void
+  creditRequests: CreditRequest[]
+  onApproveCreditRequest: (requestId: string) => void
+  onRejectCreditRequest: (requestId: string, reason: string) => void
+}) {
+  const [adminPage, setAdminPage] = useState<'baocao' | 'credit-requests' | 'dinhmuc' | 'phanquyen' | 'users'>('baocao')
+  const pendingRequestCount = creditRequests.filter(request => request.status === 'pending').length
 
   const menu = [
     { id: 'baocao', label: 'Báo cáo', icon: '📊' },
+    { id: 'credit-requests', label: 'Duyệt Credit', icon: '⚡', count: pendingRequestCount },
     { id: 'dinhmuc', label: 'Thiết lập định mức', icon: '⚙️' },
     { id: 'phanquyen', label: 'Phân quyền tính năng', icon: '🔐' },
     { id: 'users', label: 'Quản lý người dùng', icon: '👥' },
@@ -4149,13 +4506,25 @@ function AdminPage({ onBack }: { onBack: () => void }) {
             }`}
           >
             <span>{item.icon}</span>
-            {item.label}
+            <span className="flex-1">{item.label}</span>
+            {'count' in item && item.count > 0 && (
+              <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {item.count > 99 ? '99+' : item.count}
+              </span>
+            )}
           </button>
         ))}
       </aside>
 
       {/* Admin content */}
       {adminPage === 'baocao' && <AdminBaoCao />}
+      {adminPage === 'credit-requests' && (
+        <AdminCreditRequests
+          requests={creditRequests}
+          onApprove={onApproveCreditRequest}
+          onReject={onRejectCreditRequest}
+        />
+      )}
       {adminPage === 'dinhmuc' && <AdminDinhMuc />}
       {adminPage === 'phanquyen' && <AdminPhanQuyen />}
       {adminPage === 'users' && <AdminUsers />}
@@ -4827,7 +5196,9 @@ export default function App() {
   const [notebookMode, setNotebookMode] = useState<NotebookMode>('doc')
   const [creditBalance, setCreditBalance] = useState(loadCreditBalance)
   const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>(loadCreditTransactions)
+  const [creditRequests, setCreditRequests] = useState<CreditRequest[]>(loadCreditRequests)
   const creditBalanceRef = useRef(creditBalance)
+  const creditRequestsRef = useRef(creditRequests)
   const [activeConversationId, setActiveConversationId] = useState(() => {
     return loadChatHistory()[0]?.id ?? createId()
   })
@@ -4839,6 +5210,32 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(CREDIT_TRANSACTIONS_KEY, JSON.stringify(creditTransactions))
   }, [creditTransactions])
+
+  useEffect(() => {
+    creditRequestsRef.current = creditRequests
+    localStorage.setItem(CREDIT_REQUESTS_KEY, JSON.stringify(creditRequests))
+  }, [creditRequests])
+
+  useEffect(() => {
+    const syncDemoDataAcrossTabs = (event: StorageEvent) => {
+      if (event.key === CREDIT_BALANCE_KEY) {
+        const nextBalance = loadCreditBalance()
+        creditBalanceRef.current = nextBalance
+        setCreditBalance(nextBalance)
+      }
+      if (event.key === CREDIT_TRANSACTIONS_KEY) {
+        setCreditTransactions(loadCreditTransactions())
+      }
+      if (event.key === CREDIT_REQUESTS_KEY) {
+        const nextRequests = loadCreditRequests()
+        creditRequestsRef.current = nextRequests
+        setCreditRequests(nextRequests)
+      }
+    }
+
+    window.addEventListener('storage', syncDemoDataAcrossTabs)
+    return () => window.removeEventListener('storage', syncDemoDataAcrossTabs)
+  }, [])
 
   const spendCredits = (amount: number, description: string): number | null => {
     if (amount <= 0 || creditBalanceRef.current < amount) return null
@@ -4875,6 +5272,71 @@ export default function App() {
     setCreditTransactions(current => [transaction, ...current].slice(0, 100))
   }
 
+  const submitCreditRequest = (amount: number, reason: string) => {
+    if (!Number.isFinite(amount) || amount <= 0 || !reason.trim()) return
+
+    const request: CreditRequest = {
+      id: createId(),
+      userId: DEMO_USER.id,
+      userName: DEMO_USER.name,
+      userEmail: DEMO_USER.email,
+      amount: Math.floor(amount),
+      reason: reason.trim(),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      notificationRead: true,
+    }
+    const nextRequests = [request, ...creditRequestsRef.current].slice(0, 200)
+    creditRequestsRef.current = nextRequests
+    setCreditRequests(nextRequests)
+  }
+
+  const approveCreditRequest = (requestId: string) => {
+    const request = creditRequestsRef.current.find(item => item.id === requestId)
+    if (!request || request.status !== 'pending') return
+
+    const reviewedAt = new Date().toISOString()
+    const nextRequests = creditRequestsRef.current.map(item => (
+      item.id === requestId
+        ? { ...item, status: 'approved' as const, reviewedAt, notificationRead: false }
+        : item
+    ))
+    creditRequestsRef.current = nextRequests
+    setCreditRequests(nextRequests)
+    addCredits(request.amount, `Yêu cầu tăng Credit đã được duyệt (${request.id.slice(0, 8)})`)
+  }
+
+  const rejectCreditRequest = (requestId: string, rejectionReason: string) => {
+    const reason = rejectionReason.trim()
+    const request = creditRequestsRef.current.find(item => item.id === requestId)
+    if (!request || request.status !== 'pending' || !reason) return
+
+    const reviewedAt = new Date().toISOString()
+    const nextRequests = creditRequestsRef.current.map(item => (
+      item.id === requestId
+        ? {
+            ...item,
+            status: 'rejected' as const,
+            reviewedAt,
+            rejectionReason: reason,
+            notificationRead: false,
+          }
+        : item
+    ))
+    creditRequestsRef.current = nextRequests
+    setCreditRequests(nextRequests)
+  }
+
+  const markCreditNotificationsRead = () => {
+    const nextRequests = creditRequestsRef.current.map(request => (
+      request.status !== 'pending' && !request.notificationRead
+        ? { ...request, notificationRead: true }
+        : request
+    ))
+    creditRequestsRef.current = nextRequests
+    setCreditRequests(nextRequests)
+  }
+
   const startNewConversation = () => {
     setActiveConversationId(createId())
     setShowAdmin(false)
@@ -4888,7 +5350,14 @@ export default function App() {
   }
 
   const renderPage = () => {
-    if (showAdmin) return <AdminPage onBack={() => setShowAdmin(false)} />
+    if (showAdmin) return (
+      <AdminPage
+        onBack={() => setShowAdmin(false)}
+        creditRequests={creditRequests}
+        onApproveCreditRequest={approveCreditRequest}
+        onRejectCreditRequest={rejectCreditRequest}
+      />
+    )
     switch (page) {
       case 'chat': return (
         <ChatPage
@@ -4949,7 +5418,9 @@ export default function App() {
           setShowPromptLib={setShowPromptLib}
           creditBalance={creditBalance}
           creditTransactions={creditTransactions}
-          onAddCredit={addCredits}
+          creditRequests={creditRequests}
+          onSubmitCreditRequest={submitCreditRequest}
+          onMarkNotificationsRead={markCreditNotificationsRead}
         />
         <main className="flex-1 flex min-h-0 overflow-hidden bg-white">
           {renderPage()}
