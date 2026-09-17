@@ -15,6 +15,237 @@ body {
   color: #1a1a1a;
 }
 
+@keyframes danai-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes danai-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes danai-soft-pulse {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+
+@keyframes danai-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes danai-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes studio-title-enter {
+  from {
+    opacity: 0;
+    letter-spacing: -.04em;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    letter-spacing: normal;
+    transform: translateY(0);
+  }
+}
+
+@keyframes studio-sparkle {
+  0%, 100% { transform: scale(.8) rotate(0deg); filter: drop-shadow(0 0 0 rgb(250 204 21 / 0)); }
+  50% { transform: scale(1.25) rotate(18deg); filter: drop-shadow(0 0 7px rgb(250 204 21 / .75)); }
+}
+
+@keyframes studio-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.danai-history-panel {
+  animation: danai-slide-in-right 360ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.danai-history-item,
+.danai-message {
+  animation: danai-fade-up 280ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.danai-typing {
+  animation: danai-soft-pulse 1.4s ease-in-out infinite;
+}
+
+/* AI Studio: staggered entrance and richer tool-card feedback. */
+.studio-page {
+  background:
+    radial-gradient(circle at 88% 0%, rgb(245 238 231 / .7), transparent 23rem),
+    #fff;
+}
+
+.studio-title {
+  animation: studio-title-enter 480ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.studio-sparkle {
+  display: inline-block;
+  animation: studio-sparkle 2.5s ease-in-out infinite 500ms;
+}
+
+.studio-controls {
+  animation: danai-fade-up 420ms cubic-bezier(.22, 1, .36, 1) both 100ms;
+}
+
+.studio-search input {
+  background: rgb(255 255 255 / .84);
+  box-shadow: 0 1px 2px rgb(28 25 23 / .03);
+}
+
+.studio-tab {
+  position: relative;
+}
+
+.studio-tab-active {
+  background: rgb(245 245 244);
+  box-shadow: 0 3px 10px rgb(68 64 60 / .08);
+}
+
+.studio-category {
+  animation: danai-fade-up 420ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.studio-tool-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  animation: studio-card-enter 460ms cubic-bezier(.22, 1, .36, 1) both;
+  transition: border-color 220ms ease, box-shadow 220ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1), background-color 220ms ease;
+}
+
+.studio-tool-card::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 24%, rgb(255 255 255 / .72) 48%, transparent 68%);
+  transform: translateX(-130%);
+  transition: transform 560ms ease;
+}
+
+.studio-tool-card:hover {
+  border-color: rgb(214 211 209);
+  background: rgb(255 253 251);
+  box-shadow: 0 14px 28px -18px rgb(68 64 60 / .42);
+  transform: translateY(-4px);
+}
+
+.studio-tool-card:hover::before {
+  transform: translateX(130%);
+}
+
+.studio-tool-icon {
+  transition: transform 260ms cubic-bezier(.22, 1, .36, 1), box-shadow 260ms ease;
+}
+
+.studio-tool-card:hover .studio-tool-icon {
+  transform: rotate(-5deg) scale(1.09);
+  box-shadow: 0 10px 20px -10px rgb(28 25 23 / .5);
+}
+
+.studio-try svg {
+  transition: transform 180ms ease;
+}
+
+.studio-tool-card:hover .studio-try svg {
+  transform: translateX(3px);
+}
+
+.studio-workspace {
+  background:
+    radial-gradient(circle at 90% 8%, rgb(254 243 199 / .56), transparent 21rem),
+    linear-gradient(180deg, rgb(250 250 249), #fff 24rem);
+}
+
+.studio-workspace-hero {
+  background: linear-gradient(115deg, rgb(245 245 244), rgb(255 255 255) 64%, rgb(255 251 235));
+}
+
+.studio-workspace-icon {
+  animation: studio-sparkle 3s ease-in-out infinite;
+}
+
+/* Shared motion for every screen and interactive control in the platform. */
+main > * {
+  animation: danai-page-enter 300ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(.22, 1, .36, 1);
+}
+
+button:not(:disabled):active {
+  transform: scale(.97);
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  box-shadow: 0 0 0 3px rgb(120 113 108 / .12);
+}
+
+[role="dialog"],
+.fixed[class*="inset"] > div {
+  animation: danai-pop-in 220ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;

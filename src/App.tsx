@@ -1,4 +1,4 @@
-// Bản DANAI đã nối khung chat với phản hồi demo và localStorage.
+// Bản ThanhDanhPlatform đã nối khung chat với phản hồi demo và localStorage.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import logoThanhDanh from './imports/logoThanhDanh.png'
 
@@ -128,7 +128,7 @@ const IconDoc = () => (
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type Page = 'chat' | 'studio' | 'studio-chart' | 'studio-infographic' | 'studio-slide' | 'notebook' | 'notebook-workspace' | 'assistant' | 'project' | 'tools' | 'history' | 'meeting'
+type Page = 'chat' | 'studio' | 'studio-tool' | 'studio-chart' | 'studio-infographic' | 'studio-slide' | 'notebook' | 'notebook-workspace' | 'assistant' | 'project' | 'tools' | 'history' | 'meeting'
 type ChatRole = 'user' | 'assistant'
 
 type ChatMessage = {
@@ -211,16 +211,67 @@ const DEFAULT_CREDIT_BALANCE = 500
 const DEMO_USER = {
   id: 'demo-user-001',
   name: 'Thành Danh',
-  email: 'thanhdanh@danai.vn',
+  email: 'thanhdanh@thanhdanhplatform.vn',
+  username: 'td123',
+  password: '123456',
+  role: 'Quản trị viên',
+  department: 'Phòng Điều hành',
+}
+const AUTH_STORAGE_KEY = 'danai-auth-v1'
+const SESSION_STORAGE_KEY = 'danai-session-v1'
+
+type UserSession = Omit<typeof DEMO_USER, 'password'>
+
+function isValidUserSession(value: unknown): value is UserSession {
+  if (!value || typeof value !== 'object') return false
+
+  const user = value as Partial<UserSession>
+  return [user.id, user.name, user.email, user.username, user.role, user.department]
+    .every(field => typeof field === 'string' && field.trim().length > 0)
+}
+
+function loadUserSession(): UserSession | null {
+  try {
+    if (localStorage.getItem(AUTH_STORAGE_KEY) !== 'true') return null
+
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY)
+    const session = raw ? JSON.parse(raw) as unknown : null
+    if (isValidUserSession(session)) return session
+
+    localStorage.removeItem(AUTH_STORAGE_KEY)
+    localStorage.removeItem(SESSION_STORAGE_KEY)
+  } catch {
+    try {
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+      localStorage.removeItem(SESSION_STORAGE_KEY)
+    } catch {
+      // noop
+    }
+  }
+
+  return null
+}
+
+function isAdminRole(role: string) {
+  return role.includes('Quản trị')
+}
+
+function getUserInitials(user: UserSession) {
+  const words = user.name.trim().split(/\s+/).filter(Boolean)
+  return (words.length > 1 ? `${words[0][0]}${words[words.length - 1][0]}` : words[0]?.slice(0, 2) || user.email.slice(0, 2)).toUpperCase()
 }
 
 function createId() {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
 }
 
-function loadChatHistory(): ChatConversation[] {
+function getChatHistoryKey(userId: string) {
+  return `${CHAT_HISTORY_KEY}:${userId}`
+}
+
+function loadChatHistory(userId: string = DEMO_USER.id): ChatConversation[] {
   try {
-    const saved = localStorage.getItem(CHAT_HISTORY_KEY)
+    const saved = localStorage.getItem(getChatHistoryKey(userId))
     return saved ? JSON.parse(saved) : []
   } catch {
     return []
@@ -291,7 +342,7 @@ function getDemoReply(question: string): string {
     return 'Bạn có thể vào AI Studio để tạo hình ảnh, chỉnh sửa hình ảnh, xóa nền hoặc nâng chất lượng ảnh.'
   }
 
-  return 'DANAI là một nền tảng AI tích hợp nhiều công cụ hỗ trợ nghiên cứu, phân tích dữ liệu, tạo hình ảnh và ghi chép cuộc họp. Bạn có thể hỏi về các tính năng, cách sử dụng hoặc yêu cầu trợ giúp từ hệ thống.'
+  return 'ThanhDanhPlatform là một nền tảng AI tích hợp nhiều công cụ hỗ trợ nghiên cứu, phân tích dữ liệu, tạo hình ảnh và ghi chép cuộc họp. Bạn có thể hỏi về các tính năng, cách sử dụng hoặc yêu cầu trợ giúp từ hệ thống.'
 }
 
 function formatFileSize(size: number): string {
@@ -422,11 +473,12 @@ function Badge({ label, color = 'orange' }: { label: string; color?: string }) {
   )
 }
 
-function Sidebar({ page, setPage, setShowPromptLib, onAdmin }: {
+function Sidebar({ page, setPage, setShowPromptLib, onAdmin, canAccessAdmin }: {
   page: Page
   setPage: (p: Page) => void
   setShowPromptLib: (v: boolean) => void
   onAdmin: () => void
+  canAccessAdmin: boolean
 }) {
   const nav = [
     { id: 'chat', label: 'Trò chuyện', icon: <IconChat /> },
@@ -444,7 +496,7 @@ function Sidebar({ page, setPage, setShowPromptLib, onAdmin }: {
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-4 py-4 border-b border-gray-100">
         <img src={logoThanhDanh} alt="Logo" className="w-25 h-25 rounded-lg" />
-        <span className="font-bold text-gray-900 text-[15px] tracking-tight ">DANAI</span>
+        <span className="font-bold text-gray-900 text-[15px] tracking-tight ">ThanhDanh</span>
       </div>
 
       {/* Search */}
@@ -491,15 +543,17 @@ function Sidebar({ page, setPage, setShowPromptLib, onAdmin }: {
       </div>
 
       {/* Bottom */}
-      <div className="border-t border-gray-100 px-2 py-2">
-        <button
-          onClick={onAdmin}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
-        >
-          <IconSettings />
-          <span>Quản trị và thiết lập</span>
-        </button>
-      </div>
+      {canAccessAdmin && (
+        <div className="border-t border-gray-100 px-2 py-2">
+          <button
+            onClick={onAdmin}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+          >
+            <IconSettings />
+            <span>Quản trị và thiết lập</span>
+          </button>
+        </div>
+      )}
     </aside>
   )
 }
@@ -637,24 +691,31 @@ function NapCreditModal({ onClose, onSubmitCreditRequest }: {
 }
 
 function TopBar({
+  currentUser,
   setShowPromptLib,
   creditBalance,
   creditTransactions,
   creditRequests,
   onSubmitCreditRequest,
   onMarkNotificationsRead,
+  onLogout,
 }: {
+  currentUser: UserSession
   setShowPromptLib: (v: boolean) => void
   creditBalance: number
   creditTransactions: CreditTransaction[]
   creditRequests: CreditRequest[]
   onSubmitCreditRequest: (amount: number, reason: string) => void
   onMarkNotificationsRead: () => void
+  onLogout: () => void
 }) {
   const [showCreditPopup, setShowCreditPopup] = useState(false)
   const [showNapModal, setShowNapModal] = useState(false)
   const [showCreditHistory, setShowCreditHistory] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const pendingRequestCount = creditRequests.filter(request => request.status === 'pending').length
   const notifications = creditRequests.filter(request => request.status !== 'pending')
   const unreadNotificationCount = notifications.filter(request => !request.notificationRead).length
@@ -840,10 +901,133 @@ function TopBar({
           </button>
         </div>
 
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-stone-600 to-amber-700 flex items-center justify-center text-white text-xs font-bold ml-1 cursor-pointer shadow-sm">
-          TD
+        <div className="relative ml-1">
+          <button
+            type="button"
+            onClick={() => setShowUserMenu(value => !value)}
+            className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full border border-gray-200 bg-white shadow-sm hover:bg-gray-50 transition-colors"
+          >
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-stone-600 to-amber-700 flex items-center justify-center text-white text-xs font-bold">
+              {getUserInitials(currentUser)}
+            </div>
+            <span className="text-sm font-semibold text-gray-700">{currentUser.name || currentUser.email}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+
+          {showUserMenu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowUserMenu(false)} />
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-2xl shadow-2xl z-20 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Tài khoản</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-900">{currentUser.username || currentUser.email}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false)
+                    setShowProfileModal(true)
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+                  Thông tin cá nhân
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false)
+                    setShowLogoutConfirm(true)
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                  Đăng xuất
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </header>
+
+      {showProfileModal && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setShowProfileModal(false)} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-white p-6 shadow-2xl border border-gray-200">
+            <div className="flex items-center gap-4 border-b border-gray-100 pb-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-700 to-amber-600 text-xl font-bold text-white">
+                {getUserInitials(currentUser)}
+              </div>
+              <div>
+                <p className="text-xl font-bold text-gray-900">{currentUser.name}</p>
+                <p className="text-sm text-gray-500">@{currentUser.username}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2.5">
+                <span className="text-sm text-gray-500">Vai trò</span>
+                <span className="text-sm font-semibold text-gray-800">{currentUser.role}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2.5">
+                <span className="text-sm text-gray-500">Phòng ban</span>
+                <span className="text-sm font-semibold text-gray-800">{currentUser.department}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2.5">
+                <span className="text-sm text-gray-500">Email</span>
+                <span className="text-sm font-semibold text-gray-800 break-all text-right">{currentUser.email}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="rounded-xl bg-stone-700 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-800"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showLogoutConfirm && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setShowLogoutConfirm(false)} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-2xl border border-gray-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+              </div>
+              <div>
+                <p className="text-lg font-bold text-gray-900">Đăng xuất</p>
+                <p className="text-sm text-gray-500">Bạn có chắc muốn thoát khỏi hệ thống?</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogoutConfirm(false)
+                  onLogout()
+                }}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {showNapModal && (
         <NapCreditModal
@@ -1014,19 +1198,22 @@ function ModelSelector({ selected, onSelect }: { selected: string; onSelect: (id
 
 // ─── Page: Chat ─────────────────────────────────────────────────────────────
 
-function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditBalance, onSpendCredits }: {
+function ChatPage({ setShowPromptLib, conversationId, userId, onNewConversation, onOpenConversation, creditBalance, onSpendCredits }: {
   setShowPromptLib: (v: boolean) => void
   conversationId: string
+  userId: string
   onNewConversation: () => void
+  onOpenConversation: (conversationId: string) => void
   creditBalance: number
   onSpendCredits: (amount: number, description: string) => number | null
 }) {
   const [input, setInput] = useState('')
   const [selectedModel, setSelectedModel] = useState('auto')
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const history = loadChatHistory()
+    const history = loadChatHistory(userId)
     return history.find(item => item.id === conversationId)?.messages ?? []
   })
+  const [chatHistory, setChatHistory] = useState<ChatConversation[]>(() => loadChatHistory(userId))
   const [isReplying, setIsReplying] = useState(false)
   const [creditError, setCreditError] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -1059,7 +1246,7 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditB
     if (messages.length === 0) return
 
     const now = new Date().toISOString()
-    const oldHistory = loadChatHistory()
+    const oldHistory = loadChatHistory(userId)
     const oldConversation = oldHistory.find(item => item.id === conversationId)
     const firstQuestion = messages.find(message => message.role === 'user')?.content
     const conversation: ChatConversation = {
@@ -1070,14 +1257,10 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditB
       messages,
     }
 
-    localStorage.setItem(
-      CHAT_HISTORY_KEY,
-      JSON.stringify([
-        conversation,
-        ...oldHistory.filter(item => item.id !== conversationId),
-      ]),
-    )
-  }, [conversationId, messages])
+    const nextHistory = [conversation, ...oldHistory.filter(item => item.id !== conversationId)]
+    localStorage.setItem(getChatHistoryKey(userId), JSON.stringify(nextHistory))
+    setChatHistory(nextHistory)
+  }, [conversationId, messages, userId])
 
   useEffect(() => {
     return () => {
@@ -1175,8 +1358,70 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditB
     </div>
   )
 
+  const formatHistoryDate = (value: string) => {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
+  }
+
+  const historyPanel = (
+    <aside className="danai-history-panel hidden xl:flex w-80 flex-shrink-0 flex-col border-l border-gray-100 bg-gray-50/70">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-white">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-800">Lịch sử trò chuyện</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{chatHistory.length} cuộc trò chuyện</p>
+        </div>
+        <button
+          type="button"
+          onClick={onNewConversation}
+          aria-label="Cuộc trò chuyện mới"
+          className="w-8 h-8 rounded-lg bg-stone-700 hover:bg-stone-800 text-white flex items-center justify-center transition-colors"
+        >
+          <IconPlus />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {chatHistory.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <div className="w-10 h-10 mx-auto mb-3 rounded-xl bg-stone-100 text-stone-500 flex items-center justify-center"><IconHistory /></div>
+            <p className="text-sm font-medium text-gray-600">Chưa có lịch sử</p>
+            <p className="text-xs text-gray-400 mt-1 leading-5">Các cuộc trò chuyện của bạn sẽ xuất hiện ở đây.</p>
+          </div>
+        ) : chatHistory.map(conversation => {
+          const lastMessage = conversation.messages[conversation.messages.length - 1]
+          const isActive = conversation.id === conversationId
+          return (
+            <button
+              type="button"
+              key={conversation.id}
+              onClick={() => onOpenConversation(conversation.id)}
+              style={{ animationDelay: `${Math.min(chatHistory.indexOf(conversation) * 45, 270)}ms` }}
+              className={`danai-history-item w-full text-left rounded-xl px-3.5 py-3 border transition-all ${
+                isActive
+                  ? 'bg-white border-stone-300 shadow-sm'
+                  : 'border-transparent hover:bg-white hover:border-gray-200'
+              }`}
+            >
+              <div className="flex gap-2.5">
+                <span className={`mt-0.5 flex-shrink-0 ${isActive ? 'text-stone-700' : 'text-gray-400'}`}><IconChat /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-medium text-gray-800">{conversation.title}</p>
+                    <span className="flex-shrink-0 text-[10px] text-gray-400">{formatHistoryDate(conversation.updatedAt)}</span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-gray-400">{lastMessage?.content ?? 'Chưa có nội dung'}</p>
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </aside>
+  )
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-white">
+    <div className="flex-1 flex min-h-0 bg-white">
+      <section className="flex-1 flex flex-col min-w-0 min-h-0">
       {messages.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 overflow-y-auto">
           <div className="w-full max-w-2xl">
@@ -1248,7 +1493,7 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditB
               {messages.map(message => (
                 <div
                   key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`danai-message flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap ${
@@ -1264,8 +1509,8 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditB
 
               {isReplying && (
                 <div className="flex justify-start">
-                  <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-bl-md px-4 py-3 text-sm">
-                    DANAI đang trả lời...
+                  <div className="danai-typing bg-gray-100 text-gray-500 rounded-2xl rounded-bl-md px-4 py-3 text-sm">
+                    ThanhDanhPlatform đang trả lời...
                   </div>
                 </div>
               )}
@@ -1282,6 +1527,8 @@ function ChatPage({ setShowPromptLib, conversationId, onNewConversation, creditB
           </div>
         </>
       )}
+      </section>
+      {historyPanel}
     </div>
   )
 }
@@ -1327,7 +1574,7 @@ const studioTools = [
   },
 ]
 
-function StudioPage({ setPage }: { setPage: (p: Page) => void }) {
+function StudioPage({ setPage, onOpenTool }: { setPage: (p: Page) => void; onOpenTool: (toolName: string) => void }) {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState('Tất cả')
   const tabs = ['Tất cả', 'Hình ảnh', 'Video', 'Âm thanh', 'Nội dung']
@@ -1337,14 +1584,14 @@ function StudioPage({ setPage }: { setPage: (p: Page) => void }) {
   )
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">
-        Chào mừng đến với <span className="text-stone-700">AI Studio</span> <span className="text-yellow-400">✦</span>
+    <div className="studio-page flex-1 overflow-y-auto px-8 py-7">
+      <h1 className="studio-title text-2xl font-bold text-gray-900 mb-1">
+        Chào mừng đến với <span className="text-stone-700">AI Studio</span> <span className="studio-sparkle text-yellow-400">✦</span>
       </h1>
 
       {/* Search + tabs */}
-      <div className="flex items-center gap-4 mt-4 mb-6">
-        <div className="relative">
+      <div className="studio-controls flex items-center gap-4 mt-4 mb-7">
+        <div className="studio-search relative">
           <IconSearch />
           <input
             value={search}
@@ -1362,9 +1609,9 @@ function StudioPage({ setPage }: { setPage: (p: Page) => void }) {
             <button
               key={t}
               onClick={() => setActiveTab(t)}
-              className={`px-4 py-1.5 text-sm rounded-full transition-all ${
+              className={`studio-tab px-4 py-1.5 text-sm rounded-full transition-all ${
                 activeTab === t
-                  ? 'text-stone-800 font-semibold border-b-2 border-stone-600'
+                  ? 'studio-tab-active text-stone-800 font-semibold border-b-2 border-stone-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -1376,25 +1623,27 @@ function StudioPage({ setPage }: { setPage: (p: Page) => void }) {
 
       {/* Tool groups */}
       <div className="space-y-8">
-        {filtered.map(group => (
-          <div key={group.category}>
+        {filtered.map((group, groupIndex) => (
+          <div key={group.category} className="studio-category" style={{ animationDelay: `${groupIndex * 100}ms` }}>
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
               {group.icon} {group.category}
             </h2>
             <div className="grid grid-cols-2 gap-4">
               {group.items
                 .filter(item => !search || item.name.toLowerCase().includes(search.toLowerCase()))
-                .map(item => (
+                .map((item, itemIndex) => (
                   <div
                     key={item.name}
                     onClick={() => {
                       if (item.name === 'Tạo biểu đồ') setPage('studio-chart')
                       else if (item.name === 'Tạo infographic') setPage('studio-infographic')
                       else if (item.name === 'Tạo slide') setPage('studio-slide')
+                      else onOpenTool(item.name)
                     }}
-                    className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-100 hover:border-stone-200 hover:shadow-sm cursor-pointer transition-all group"
+                    style={{ animationDelay: `${groupIndex * 100 + itemIndex * 65}ms` }}
+                    className="studio-tool-card flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-100 cursor-pointer group"
                   >
-                    <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center text-2xl flex-shrink-0 shadow-sm`}>
+                    <div className={`studio-tool-icon w-14 h-14 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center text-2xl flex-shrink-0 shadow-sm`}>
                       {item.emoji}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -1403,7 +1652,7 @@ function StudioPage({ setPage }: { setPage: (p: Page) => void }) {
                         {'new' in item && item.new && <Badge label="Mới" />}
                       </div>
                       <p className="text-xs text-gray-500 line-clamp-2">{item.desc}</p>
-                      <span className="text-xs text-stone-700 mt-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="studio-try text-xs text-stone-700 mt-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         Thử ngay <IconArrowRight />
                       </span>
                     </div>
@@ -1418,6 +1667,51 @@ function StudioPage({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ─── Page: Notebook Mode Select ──────────────────────────────────────────────
+
+const studioToolDetails: Record<string, { emoji: string; label: string; placeholder: string; action: string; tips: string[] }> = {
+  'Tạo hình ảnh': { emoji: '🎨', label: 'Mô tả hình ảnh', placeholder: 'Mô tả ý tưởng, phong cách, ánh sáng và bố cục bạn muốn...', action: 'Tạo hình ảnh', tips: ['Ảnh sản phẩm', 'Poster sáng tạo', 'Minh hoạ thương hiệu'] },
+  'Chỉnh sửa hình ảnh': { emoji: '🖊️', label: 'Yêu cầu chỉnh sửa', placeholder: 'Ví dụ: Xóa nền, tăng độ nét hoặc thay đổi bối cảnh...', action: 'Chỉnh sửa ảnh', tips: ['Xóa nền', 'Nâng chất lượng', 'Thay đổi bối cảnh'] },
+  'Tạo video': { emoji: '🎬', label: 'Kịch bản video', placeholder: 'Mô tả cảnh quay, chuyển động và không khí cho video...', action: 'Tạo video', tips: ['Video quảng cáo', 'Video sản phẩm', 'Video mạng xã hội'] },
+  'Tóm tắt YouTube': { emoji: '▶️', label: 'Liên kết YouTube', placeholder: 'Dán liên kết video YouTube vào đây...', action: 'Tóm tắt video', tips: ['Ý chính', 'Mốc thời gian', 'Bài học rút ra'] },
+  'Tạo nhạc': { emoji: '🎵', label: 'Mô tả bản nhạc', placeholder: 'Mô tả thể loại, cảm xúc và thời lượng bản nhạc...', action: 'Tạo nhạc', tips: ['Lofi thư giãn', 'Nhạc quảng cáo', 'Nhạc cinematic'] },
+  'Chuyển giọng nói thành văn bản': { emoji: '🎙️', label: 'Tùy chọn chép lời', placeholder: 'Ghi chú về ngôn ngữ hoặc định dạng chép lời bạn mong muốn...', action: 'Chuyển thành văn bản', tips: ['Có dấu thời gian', 'Tách người nói', 'Tóm tắt nội dung'] },
+  'Tạo giọng cá nhân': { emoji: '🔊', label: 'Nội dung cần đọc', placeholder: 'Nhập đoạn văn bản bạn muốn chuyển thành giọng nói...', action: 'Tạo giọng nói', tips: ['Giọng thân thiện', 'Giọng chuyên nghiệp', 'Giọng kể chuyện'] },
+  'Tạo mindmap': { emoji: '🧠', label: 'Chủ đề hoặc nội dung', placeholder: 'Nhập chủ đề hoặc dán nội dung để tạo sơ đồ tư duy...', action: 'Tạo mindmap', tips: ['Lập kế hoạch', 'Phân tích ý tưởng', 'Học tập'] },
+  'Dịch văn bản': { emoji: '🌐', label: 'Văn bản cần dịch', placeholder: 'Dán nội dung bạn muốn dịch vào đây...', action: 'Dịch văn bản', tips: ['Việt → Anh', 'Anh → Việt', 'Giữ văn phong'] },
+}
+
+function StudioToolWorkspace({ toolName, setPage }: { toolName: string; setPage: (p: Page) => void }) {
+  const tool = studioToolDetails[toolName] ?? studioToolDetails['Tạo hình ảnh']
+  const [content, setContent] = useState('')
+  const [isComplete, setIsComplete] = useState(false)
+
+  return (
+    <div className="studio-workspace flex-1 overflow-y-auto px-8 py-8">
+      <div className="max-w-4xl mx-auto">
+        <button type="button" onClick={() => setPage('studio')} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-stone-800 mb-7"><span className="text-lg">←</span> Quay lại AI Studio</button>
+        <div className="rounded-3xl border border-stone-100 bg-white shadow-[0_18px_50px_-30px_rgba(68,64,60,.35)] overflow-hidden">
+          <div className="studio-workspace-hero px-8 py-8 sm:px-10">
+            <p className="text-[11px] font-semibold tracking-[.18em] text-stone-500">AI STUDIO · {toolName.toUpperCase()}</p>
+            <div className="flex items-start gap-4 mt-3">
+              <div className="studio-workspace-icon w-14 h-14 flex items-center justify-center rounded-2xl bg-white/80 shadow-sm text-3xl">{tool.emoji}</div>
+              <div><h1 className="text-2xl font-bold text-gray-900">{toolName}</h1><p className="text-sm text-gray-600 mt-1.5">Thiết lập yêu cầu của bạn, AI sẽ chuẩn bị kết quả theo đúng mục tiêu.</p></div>
+            </div>
+          </div>
+          <div className="p-8 sm:p-10">
+            <div className="flex flex-wrap gap-2 mb-6">{tool.tips.map(tip => <button key={tip} type="button" onClick={() => setContent(tip)} className="px-3 py-1.5 text-xs rounded-full bg-stone-50 border border-stone-200 text-stone-600 hover:bg-stone-100">{tip}</button>)}</div>
+            <label className="block text-sm font-semibold text-gray-800 mb-2">{tool.label}</label>
+            <textarea value={content} onChange={event => { setContent(event.target.value); setIsComplete(false) }} placeholder={tool.placeholder} rows={7} className="w-full rounded-2xl border-2 border-stone-200 bg-stone-50/50 px-5 py-4 text-sm leading-6 outline-none focus:border-stone-500 resize-none" />
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <button type="button" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-stone-800"><IconUpload /> Tải tệp lên</button>
+              <button type="button" disabled={!content.trim()} onClick={() => setIsComplete(true)} className="px-5 py-3 rounded-xl bg-stone-700 hover:bg-stone-800 disabled:bg-gray-200 text-white text-sm font-semibold shadow-sm">{tool.action} <span className="ml-1">→</span></button>
+            </div>
+            {isComplete && <div className="danai-message mt-6 rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-800">Yêu cầu đã sẵn sàng. Bản demo đã ghi nhận nội dung của bạn để xử lý bằng AI.</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function NotebookPage({ setPage, onSelectMode }: {
   setPage: (p: Page) => void
@@ -1703,7 +1997,7 @@ function NotebookWorkspace({ setPage, mode, creditBalance, onSpendCredits }: {
               <div className="w-16 h-16 rounded-2xl bg-stone-100 flex items-center justify-center text-3xl mb-4">📚</div>
               <h2 className="text-xl font-bold text-gray-900">Nghiên cứu tài liệu</h2>
               <p className="text-sm text-gray-500 mt-2 max-w-md">
-                Đính kèm tài liệu để DANAI kiểm tra định dạng, thống kê nội dung và đưa ra đánh giá cơ bản.
+                Đính kèm tài liệu để ThanhDanhPlatform kiểm tra định dạng, thống kê nội dung và đưa ra đánh giá cơ bản.
               </p>
               <button
                 type="button"
@@ -1719,7 +2013,7 @@ function NotebookWorkspace({ setPage, mode, creditBalance, onSpendCredits }: {
             <div className="h-full flex flex-col items-center justify-center text-center">
               <div className="w-10 h-10 rounded-full border-4 border-stone-200 border-t-stone-700 animate-spin mb-4" />
               <h2 className="text-base font-semibold text-gray-800">Đang phân tích tài liệu...</h2>
-              <p className="text-sm text-gray-400 mt-1">DANAI đang kiểm tra cấu trúc và chất lượng nội dung.</p>
+              <p className="text-sm text-gray-400 mt-1">ThanhDanhPlatform đang kiểm tra cấu trúc và chất lượng nội dung.</p>
             </div>
           )}
 
@@ -1809,7 +2103,7 @@ function NotebookWorkspace({ setPage, mode, creditBalance, onSpendCredits }: {
 
               {questionResult && (
                 <div className="bg-white border border-stone-200 rounded-2xl p-5 shadow-sm">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-2">DANAI trả lời</h3>
+                  <h3 className="text-sm font-semibold text-gray-800 mb-2">ThanhDanhPlatform trả lời</h3>
                   <p className="text-sm leading-6 text-gray-600">{questionResult}</p>
                 </div>
               )}
@@ -2364,7 +2658,7 @@ function ProjectWorkspace({ project, onBack, onUpdateProject, creditBalance, onS
       const normalizedQuestion = question.toLowerCase()
       const reply = normalizedQuestion.includes('credit') || normalizedQuestion.includes('số dư')
         ? getDemoReply(question, remainingCredit)
-        : `Đây là phản hồi demo trong dự án “${project.name}”. Nội dung bạn vừa hỏi đã được lưu vào lịch sử riêng của dự án. Khi kết nối AI Gateway, DANAI sẽ sử dụng mô tả và các cuộc trò chuyện trong dự án làm ngữ cảnh trả lời.`
+        : `Đây là phản hồi demo trong dự án “${project.name}”. Nội dung bạn vừa hỏi đã được lưu vào lịch sử riêng của dự án. Khi kết nối AI Gateway, ThanhDanhPlatform sẽ sử dụng mô tả và các cuộc trò chuyện trong dự án làm ngữ cảnh trả lời.`
       appendMessage(conversationId, {
         id: createId(),
         role: 'assistant',
@@ -2472,7 +2766,7 @@ function ProjectWorkspace({ project, onBack, onUpdateProject, creditBalance, onS
                 ))}
                 {isReplying && (
                   <div className="flex justify-start">
-                    <div className="rounded-2xl rounded-bl-md bg-gray-100 px-4 py-3 text-sm text-gray-500">DANAI đang trả lời...</div>
+                    <div className="rounded-2xl rounded-bl-md bg-gray-100 px-4 py-3 text-sm text-gray-500">ThanhDanhPlatform đang trả lời...</div>
                   </div>
                 )}
               </div>
@@ -3545,10 +3839,11 @@ function AdminPhanQuyen() {
 type PermissionAction = 'view' | 'edit' | 'export'
 type FeaturePermission = Record<PermissionAction, boolean>
 
-type UserRow = { name: string; email: string; role: string; permissions: Record<string, FeaturePermission> }
+type UserRow = { name: string; email: string; password: string; role: string; permissions: Record<string, FeaturePermission> }
 type StoredUser = UserRow & { id: string; department: string; status: 'Đang sử dụng' | 'Tạm khóa' }
 
 const STORAGE_KEY = 'thanhdanh-users'
+const DEFAULT_USER_PASSWORD = '123456'
 
 function getDefaultUserPermissions(role: string): Record<string, FeaturePermission> {
   const base: Record<string, FeaturePermission> = {
@@ -3599,6 +3894,7 @@ const defaultUsers: StoredUser[] = [
     id: 'NV000001',
     name: 'Trần Thanh Hiếu',
     email: 'thanhhieu@thanhdanh.ai',
+    password: DEFAULT_USER_PASSWORD,
     role: 'Quản trị hệ thống',
     department: 'CÔNG TY LUẬT TNHH TÂM PHÚC AG',
     status: 'Đang sử dụng',
@@ -3675,12 +3971,21 @@ function EditUserModal({ user, onClose, onSave }: { user: StoredUser; onClose: (
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email</label>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email đăng nhập</label>
               <input
                 value={form.email}
                 onChange={e => updateForm('email', e.target.value)}
                 className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-stone-400"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Mật khẩu</label>
+              <input
+                value={form.password}
+                readOnly
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 outline-none"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">Mật khẩu mặc định khi cấp tài khoản</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1.5 block">Vai trò</label>
@@ -3774,12 +4079,13 @@ function EditUserModal({ user, onClose, onSave }: { user: StoredUser; onClose: (
 }
 
 function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: (users: UserRow[]) => void }) {
-  const [rows, setRows] = useState<UserRow[]>([{ name: '', email: '', role: 'Người dùng', permissions: getDefaultUserPermissions('Người dùng') }])
+  const emptyUser = (): UserRow => ({ name: '', email: '', password: DEFAULT_USER_PASSWORD, role: 'Người dùng', permissions: getDefaultUserPermissions('Người dùng') })
+  const [rows, setRows] = useState<UserRow[]>([emptyUser()])
   const [showInfo, setShowInfo] = useState(true)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
   const addRow = () => {
-    setRows(r => [...r, { name: '', email: '', role: 'Người dùng', permissions: getDefaultUserPermissions('Người dùng') }])
+    setRows(r => [...r, emptyUser()])
     setSelectedIndex(rows.length)
   }
 
@@ -3808,7 +4114,7 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: (users
 
   const removeRow = (i: number) => {
     const nextRows = rows.filter((_, idx) => idx !== i)
-    setRows(nextRows.length ? nextRows : [{ name: '', email: '', role: 'Người dùng', permissions: getDefaultUserPermissions('Người dùng') }])
+    setRows(nextRows.length ? nextRows : [emptyUser()])
     setSelectedIndex(0)
   }
 
@@ -3832,9 +4138,10 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: (users
                 <th className="text-left py-2 pr-3 text-xs font-medium text-gray-500 w-10">STT</th>
                 <th className="text-left py-2 pr-3 text-xs font-medium text-gray-500">Họ và tên</th>
                 <th className="text-left py-2 pr-3 text-xs font-medium text-gray-500">
-                  Email tài khoản
+                  Email đăng nhập
                   <button className="ml-1 text-gray-300 hover:text-gray-500 align-middle"><IconInfo /></button>
                 </th>
+                <th className="text-left py-2 pr-3 text-xs font-medium text-gray-500">Mật khẩu mặc định</th>
                 <th className="text-left py-2 text-xs font-medium text-gray-500">Vai trò</th>
                 <th className="w-6" />
               </tr>
@@ -3861,6 +4168,13 @@ function AddUserModal({ onClose, onSave }: { onClose: () => void; onSave: (users
                       onChange={e => updateRow(i, 'email', e.target.value)}
                       placeholder="Nhập email tài khoản"
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:border-stone-400 placeholder-gray-300"
+                    />
+                  </td>
+                  <td className="py-2 pr-3">
+                    <input
+                      value={row.password}
+                      readOnly
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 outline-none"
                     />
                   </td>
                   <td className="py-2">
@@ -3978,7 +4292,7 @@ function AdminUsers() {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return defaultUsers
       const parsed = JSON.parse(raw) as StoredUser[]
-      return parsed.length ? parsed : defaultUsers
+      return parsed.length ? parsed.map(user => ({ ...user, password: user.password || DEFAULT_USER_PASSWORD })) : defaultUsers
     } catch {
       return defaultUsers
     }
@@ -4003,6 +4317,7 @@ function AdminUsers() {
       id: `NV${String(Date.now() + index).slice(-6)}`,
       name: user.name.trim(),
       email: user.email.trim(),
+      password: user.password || DEFAULT_USER_PASSWORD,
       role: user.role,
       department: 'CÔNG TY LUẬT TNHH TÂM PHÚC AG',
       status: 'Đang sử dụng',
@@ -4473,7 +4788,7 @@ function AdminPage({ onBack, creditRequests, onApproveCreditRequest, onRejectCre
   onApproveCreditRequest: (requestId: string) => void
   onRejectCreditRequest: (requestId: string, reason: string) => void
 }) {
-  const [adminPage, setAdminPage] = useState<'baocao' | 'credit-requests' | 'dinhmuc' | 'phanquyen' | 'users'>('baocao')
+  const [adminPage, setAdminPage] = useState<'baocao' | 'credit-requests' | 'dinhmuc' | 'phanquyen' | 'users' | 'chat-history'>('baocao')
   const pendingRequestCount = creditRequests.filter(request => request.status === 'pending').length
 
   const menu = [
@@ -4482,6 +4797,7 @@ function AdminPage({ onBack, creditRequests, onApproveCreditRequest, onRejectCre
     { id: 'dinhmuc', label: 'Thiết lập định mức', icon: '⚙️' },
     { id: 'phanquyen', label: 'Phân quyền tính năng', icon: '🔐' },
     { id: 'users', label: 'Quản lý người dùng', icon: '👥' },
+    { id: 'chat-history', label: 'Lịch sử người dùng', icon: '💬' },
   ] as const
 
   return (
@@ -4528,6 +4844,7 @@ function AdminPage({ onBack, creditRequests, onApproveCreditRequest, onRejectCre
       {adminPage === 'dinhmuc' && <AdminDinhMuc />}
       {adminPage === 'phanquyen' && <AdminPhanQuyen />}
       {adminPage === 'users' && <AdminUsers />}
+      {adminPage === 'chat-history' && <AdminChatHistory />}
     </div>
   )
 }
@@ -5095,11 +5412,12 @@ function SlidePage({ setPage }: { setPage: (p: Page) => void }) {
 
 // ─── Page: Chat history ──────────────────────────────────────────────────────
 
-function HistoryPage({ onOpenConversation, onNewConversation }: {
+function HistoryPage({ userId, onOpenConversation, onNewConversation }: {
+  userId: string
   onOpenConversation: (conversationId: string) => void
   onNewConversation: () => void
 }) {
-  const [history] = useState<ChatConversation[]>(() => loadChatHistory())
+  const [history] = useState<ChatConversation[]>(() => loadChatHistory(userId))
 
   const formatDate = (value: string) => {
     const date = new Date(value)
@@ -5121,7 +5439,7 @@ function HistoryPage({ onOpenConversation, onNewConversation }: {
           <IconHistory />
         </div>
         <h2 className="text-lg font-bold text-gray-800">Chưa có lịch sử trò chuyện</h2>
-        <p className="text-sm text-gray-400 mt-2 mb-5">Hãy bắt đầu một cuộc trò chuyện mới với DANAI.</p>
+        <p className="text-sm text-gray-400 mt-2 mb-5">Hãy bắt đầu một cuộc trò chuyện mới với ThanhDanhPlatform.</p>
         <button
           type="button"
           onClick={onNewConversation}
@@ -5187,10 +5505,111 @@ function HistoryPage({ onOpenConversation, onNewConversation }: {
   )
 }
 
+function AdminChatHistory() {
+  const [users] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      const stored = raw ? JSON.parse(raw) as Array<{ id: string; name: string; email: string; role: string; status: string }> : []
+      return [
+        { id: DEMO_USER.id, name: DEMO_USER.name, email: DEMO_USER.email, role: DEMO_USER.role, status: 'Đang sử dụng' },
+        ...stored.filter(user => user.id !== DEMO_USER.id),
+      ]
+    } catch {
+      return [{ id: DEMO_USER.id, name: DEMO_USER.name, email: DEMO_USER.email, role: DEMO_USER.role, status: 'Đang sử dụng' }]
+    }
+  })
+  const [selectedUserId, setSelectedUserId] = useState('all')
+  const [selectedConversation, setSelectedConversation] = useState<ChatConversation | null>(null)
+
+  const visibleUsers = selectedUserId === 'all' ? users : users.filter(user => user.id === selectedUserId)
+  const conversations = visibleUsers.flatMap(user => loadChatHistory(user.id).map(conversation => ({ ...conversation, user })))
+
+  return (
+    <div className="flex-1 min-w-0 overflow-y-auto bg-gray-50 px-6 py-8">
+      <div className="w-full max-w-5xl mx-auto">
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Lịch sử chat người dùng</h1>
+            <p className="text-sm text-gray-400 mt-1">Quản trị viên có thể xem và lọc lịch sử theo từng tài khoản.</p>
+          </div>
+          <select
+            value={selectedUserId}
+            onChange={event => {
+              setSelectedUserId(event.target.value)
+              setSelectedConversation(null)
+            }}
+            className="min-w-64 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-stone-400"
+          >
+            <option value="all">Tất cả người dùng</option>
+            {users.map(user => <option key={user.id} value={user.id}>{user.name} · {user.email}</option>)}
+          </select>
+        </div>
+
+        {conversations.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-6 py-16 text-center">
+            <IconHistory />
+            <p className="mt-3 text-sm font-medium text-gray-700">Chưa có lịch sử chat</p>
+            <p className="mt-1 text-xs text-gray-400">Lịch sử sẽ xuất hiện sau khi người dùng gửi tin nhắn.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+            <div className="space-y-3">
+              {conversations.map(({ user, ...conversation }) => (
+                <button
+                  type="button"
+                  key={`${user.id}-${conversation.id}`}
+                  onClick={() => setSelectedConversation(conversation)}
+                  className={`w-full rounded-xl border bg-white px-5 py-4 text-left transition-all ${selectedConversation?.id === conversation.id ? 'border-stone-400 shadow-sm' : 'border-gray-200 hover:border-stone-300'}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900">{conversation.title}</p>
+                      <p className="mt-1 text-xs text-stone-600">{user.name} · {user.email}</p>
+                      <p className="mt-2 truncate text-xs text-gray-400">{conversation.messages[conversation.messages.length - 1]?.content ?? 'Chưa có nội dung'}</p>
+                    </div>
+                    <span className="flex-shrink-0 text-[11px] text-gray-400">{conversation.messages.length} tin</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="min-h-72 rounded-2xl border border-gray-200 bg-white p-5">
+              {selectedConversation ? (
+                <div className="space-y-4">
+                  <div className="border-b border-gray-100 pb-4">
+                    <h2 className="text-base font-semibold text-gray-900">{selectedConversation.title}</h2>
+                    <p className="mt-1 text-xs text-gray-400">{selectedConversation.messages.length} tin nhắn</p>
+                  </div>
+                  <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+                    {selectedConversation.messages.map(message => (
+                      <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 whitespace-pre-wrap ${message.role === 'user' ? 'bg-stone-700 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                          {message.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex h-full min-h-64 items-center justify-center text-center text-sm text-gray-400">Chọn một cuộc trò chuyện để xem nội dung.</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── App root ────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(() => loadUserSession())
+  const isAuthenticated = currentUser !== null
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' })
+  const [loginError, setLoginError] = useState('')
   const [page, setPage] = useState<Page>('chat')
+  const [activeStudioTool, setActiveStudioTool] = useState('Tạo hình ảnh')
   const [showPromptLib, setShowPromptLib] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [notebookMode, setNotebookMode] = useState<NotebookMode>('doc')
@@ -5200,8 +5619,89 @@ export default function App() {
   const creditBalanceRef = useRef(creditBalance)
   const creditRequestsRef = useRef(creditRequests)
   const [activeConversationId, setActiveConversationId] = useState(() => {
-    return loadChatHistory()[0]?.id ?? createId()
+    const session = loadUserSession()
+    return loadChatHistory(session?.id ?? DEMO_USER.id)[0]?.id ?? createId()
   })
+
+  const canAccessAdmin = currentUser !== null && isAdminRole(currentUser.role)
+
+  useEffect(() => {
+    if (!currentUser) return
+
+    try {
+      localStorage.setItem(AUTH_STORAGE_KEY, 'true')
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(currentUser))
+    } catch {
+      // noop
+    }
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!canAccessAdmin) setShowAdmin(false)
+  }, [canAccessAdmin])
+
+  useEffect(() => {
+    if (!currentUser) return
+    setActiveConversationId(loadChatHistory(currentUser.id)[0]?.id ?? createId())
+    setPage('chat')
+  }, [currentUser?.id])
+
+  const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const loginValue = loginForm.username.trim().toLowerCase()
+    const storedUsers = (() => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        return raw ? JSON.parse(raw) as StoredUser[] : []
+      } catch {
+        return []
+      }
+    })()
+    const matchingUser = storedUsers.find(user => user.email.toLowerCase() === loginValue && (user.password || DEFAULT_USER_PASSWORD) === loginForm.password && user.status === 'Đang sử dụng')
+
+    const loggedInUser: UserSession | null = loginValue === DEMO_USER.username && loginForm.password === DEMO_USER.password
+      ? {
+          id: DEMO_USER.id,
+          name: DEMO_USER.name,
+          email: DEMO_USER.email,
+          username: DEMO_USER.username,
+          role: DEMO_USER.role,
+          department: DEMO_USER.department,
+        }
+      : matchingUser
+        ? {
+            id: matchingUser.id,
+            name: matchingUser.name,
+            email: matchingUser.email,
+            username: matchingUser.email,
+            role: matchingUser.role,
+            department: matchingUser.department,
+          }
+        : null
+
+    if (loggedInUser) {
+      setCurrentUser(loggedInUser)
+      setShowAdmin(false)
+      setLoginError('')
+      return
+    }
+
+    setLoginError('Tài khoản hoặc mật khẩu không đúng.')
+  }
+
+  const handleLogout = () => {
+    setCurrentUser(null)
+    setShowAdmin(false)
+    setLoginForm({ username: '', password: '' })
+    setLoginError('')
+    try {
+      localStorage.setItem(AUTH_STORAGE_KEY, 'false')
+      localStorage.removeItem(SESSION_STORAGE_KEY)
+    } catch {
+      // noop
+    }
+  }
 
   useEffect(() => {
     localStorage.setItem(CREDIT_BALANCE_KEY, String(creditBalance))
@@ -5277,9 +5777,9 @@ export default function App() {
 
     const request: CreditRequest = {
       id: createId(),
-      userId: DEMO_USER.id,
-      userName: DEMO_USER.name,
-      userEmail: DEMO_USER.email,
+      userId: currentUser?.id ?? DEMO_USER.id,
+      userName: currentUser?.name ?? DEMO_USER.name,
+      userEmail: currentUser?.email ?? DEMO_USER.email,
       amount: Math.floor(amount),
       reason: reason.trim(),
       status: 'pending',
@@ -5350,7 +5850,7 @@ export default function App() {
   }
 
   const renderPage = () => {
-    if (showAdmin) return (
+    if (showAdmin && canAccessAdmin) return (
       <AdminPage
         onBack={() => setShowAdmin(false)}
         creditRequests={creditRequests}
@@ -5361,15 +5861,18 @@ export default function App() {
     switch (page) {
       case 'chat': return (
         <ChatPage
-          key={activeConversationId}
+          key={`${currentUser?.id ?? DEMO_USER.id}-${activeConversationId}`}
           setShowPromptLib={setShowPromptLib}
           conversationId={activeConversationId}
+          userId={currentUser?.id ?? DEMO_USER.id}
           onNewConversation={startNewConversation}
+          onOpenConversation={openConversation}
           creditBalance={creditBalance}
           onSpendCredits={spendCredits}
         />
       )
-      case 'studio': return <StudioPage setPage={setPage} />
+      case 'studio': return <StudioPage setPage={setPage} onOpenTool={toolName => { setActiveStudioTool(toolName); setPage('studio-tool') }} />
+      case 'studio-tool': return <StudioToolWorkspace toolName={activeStudioTool} setPage={setPage} />
       case 'studio-chart': return <ChartPage setPage={setPage} />
       case 'studio-infographic': return <InfographicPage setPage={setPage} />
       case 'studio-slide': return <SlidePage setPage={setPage} />
@@ -5393,16 +5896,19 @@ export default function App() {
       case 'meeting': return <MeetingPage />
       case 'history': return (
         <HistoryPage
+          userId={currentUser?.id ?? DEMO_USER.id}
           onOpenConversation={openConversation}
           onNewConversation={startNewConversation}
         />
       )
       default: return (
         <ChatPage
-          key={activeConversationId}
+          key={`${currentUser?.id ?? DEMO_USER.id}-${activeConversationId}`}
           setShowPromptLib={setShowPromptLib}
           conversationId={activeConversationId}
+          userId={currentUser?.id ?? DEMO_USER.id}
           onNewConversation={startNewConversation}
+          onOpenConversation={openConversation}
           creditBalance={creditBalance}
           onSpendCredits={spendCredits}
         />
@@ -5410,17 +5916,107 @@ export default function App() {
     }
   }
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#f5f1eb,_#f3f4f6_32%,_#ffffff_100%)] flex items-center justify-center px-4 py-8">
+        <div className="grid w-full max-w-6xl overflow-hidden rounded-[32px] border border-stone-200 bg-white shadow-[0_30px_80px_-35px_rgba(28,25,23,0.45)] lg:grid-cols-[1.08fr_0.92fr]">
+          <div className="relative hidden overflow-hidden border-r border-stone-200 bg-[radial-gradient(circle_at_top_left,_#fff5eb,_#fef3c7_25%,_#f5f5f4_100%)] p-10 lg:flex lg:flex-col lg:justify-between">
+            <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(255,255,255,0.2),transparent_35%,rgba(255,255,255,0.3))]" />
+            <div className="relative z-10">
+              <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-stone-200 bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-stone-700 backdrop-blur-sm">
+                Business AI Platform
+              </div>
+              <h2 className="max-w-sm text-4xl font-black leading-tight text-stone-900">
+                Quy trình AI <span className="text-amber-600">thông minh</span> cho doanh nghiệp
+              </h2>
+            </div>
+
+            <div className="relative z-10 space-y-4">
+              {[
+                'Tích hợp trợ lý AI cho nội dung và báo cáo',
+                'Quản lý nhân sự, phân quyền và định mức Credit',
+                'Hệ thống chat, notebook và studio theo workflow rõ ràng',
+              ].map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-2xl border border-white/60 bg-white/50 px-4 py-3 shadow-sm backdrop-blur-sm">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-900 text-white shadow-sm">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.5L9.5 17L19 7.5"/></svg>
+                  </div>
+                  <span className="text-sm font-medium text-stone-700">{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center bg-white p-6 sm:p-10 lg:p-12">
+            <form onSubmit={handleLogin} className="w-full max-w-md">
+              <div className="mb-8 text-center lg:text-left">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#1c1917,#44403c)] text-xl font-black text-white shadow-lg lg:mx-0">
+                  TD
+                </div>
+                <h1 className="text-3xl font-black text-stone-900">Đăng nhập</h1>
+                <p className="mt-2 text-sm text-stone-500">Chào mừng bạn quay lại ThanhDanhPlatform</p>
+              </div>
+
+              <div className="space-y-5">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-stone-700">Email hoặc tài khoản</label>
+                  <input
+                    type="text"
+                    value={loginForm.username}
+                    onChange={event => setLoginForm(current => ({ ...current, username: event.target.value }))}
+                    placeholder="email@congty.vn hoặc td123"
+                    className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-800 outline-none transition-all focus:border-stone-400 focus:bg-white focus:ring-4 focus:ring-stone-100"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-stone-700">Mật khẩu</label>
+                  <input
+                    type="password"
+                    value={loginForm.password}
+                    onChange={event => setLoginForm(current => ({ ...current, password: event.target.value }))}
+                    placeholder="123456"
+                    className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-800 outline-none transition-all focus:border-stone-400 focus:bg-white focus:ring-4 focus:ring-stone-100"
+                  />
+                </div>
+
+                {loginError && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                    {loginError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full rounded-2xl bg-[linear-gradient(135deg,#1c1917,#57534e)] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-stone-200 transition-transform hover:-translate-y-0.5 hover:shadow-xl"
+                >
+                  Đăng nhập
+                </button>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-3 text-center text-xs text-stone-600">
+                Demo tài khoản: <span className="font-semibold text-stone-800">td123</span> / <span className="font-semibold text-stone-800">123456</span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-screen flex overflow-hidden bg-gray-50">
-      <Sidebar page={page} setPage={p => { setShowAdmin(false); setPage(p) }} setShowPromptLib={setShowPromptLib} onAdmin={() => setShowAdmin(true)} />
+      <Sidebar page={page} setPage={p => { setShowAdmin(false); setPage(p) }} setShowPromptLib={setShowPromptLib} canAccessAdmin={canAccessAdmin} onAdmin={() => canAccessAdmin && setShowAdmin(true)} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar
+          currentUser={currentUser}
           setShowPromptLib={setShowPromptLib}
           creditBalance={creditBalance}
           creditTransactions={creditTransactions}
           creditRequests={creditRequests}
           onSubmitCreditRequest={submitCreditRequest}
           onMarkNotificationsRead={markCreditNotificationsRead}
+          onLogout={handleLogout}
         />
         <main className="flex-1 flex min-h-0 overflow-hidden bg-white">
           {renderPage()}
